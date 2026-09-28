@@ -1503,6 +1503,11 @@ class Generator {
       });
       blob = await fixWebmDuration(new Blob(this.chunks, { type: this.mime.split(";")[0] }), this.length * 1000);
       this.say("");
+      // Browsers stop drawing hidden tabs – then nothing was recorded
+      if (!blob.size) {
+        blob = null;
+        this.emptyRec = true;
+      }
     }
     if (this.ac) this.ac.close().catch(() => {});
     this.showEnd(blob, null, early);
@@ -1526,6 +1531,7 @@ class Generator {
             <button class="kb-btn is-ghost" data-end="close">Close</button>
           </div>
           ${blob ? `<p class="kb-hint">WebM video – plays in the browser, VLC and most players.</p>` : ""}
+          ${this.emptyRec ? `<p class="kb-hint">Nothing was recorded – keep this tab visible while the show runs, browsers pause hidden tabs.</p>` : ""}
         </div>`;
     end.onclick = (e) => {
       const b = e.target.closest("[data-end]");
