@@ -1,0 +1,28 @@
+/* PMV Generator on the web: a slim top bar instead of the Stash navigation, plus the local clip picker */
+.kb-solo .kb-main { max-width: 1500px; margin: 0 auto; }
+.kb-solo-bar { display: flex; align-items: center; gap: 12px; padding: 14px var(--pad) 0; }
+.kb-solo-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font: 700 18px/1 var(--f-display); letter-spacing: .02em; }
+.kb-solo-brand svg { width: 22px; height: 22px; }
+.kb-solo-note { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--bg-3); border-radius: 999px; color: var(--text-2); font: 500 12.5px/1 var(--f-label); }
+.kb-solo-note .kb-ic { width: 14px; height: 14px; color: var(--ok); }
+.kb-solo-src { color: var(--faint); font: 500 13px/1 var(--f-label); }
+.kb-solo-src:hover { color: var(--pink); }
+
+/* Clips: drop zone while empty, afterwards a compact bar – the whole card takes drops */
+.kb-pmvg-clips.is-over { outline: 2px dashed var(--pink); outline-offset: -2px; }
+.kb-pmvg-libdrop { min-height: 130px; }
+.kb-pmvg-libdrop:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
+.kb-pmvg-link { padding: 0; border: 0; color: var(--pink); font: inherit; text-decoration: underline; text-underline-offset: 2px; background: none; cursor: pointer; }
+.kb-pmvg-link:hover { color: var(--pink-2); }
+.kb-pmvg-libbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 12px; border: 1px solid var(--bg-3); border-radius: 6px; background: var(--base); }
+.kb-pmvg-libbar[hidden] { display: none; }
+.kb-pmvg-libbar > .kb-ic { width: 20px; height: 20px; color: var(--pink); }
+.kb-pmvg-libbar [data-libsum] { color: var(--text); font: 600 14px/1.3 var(--f-label); font-variant-numeric: tabular-nums; }
+
+/* Templates from your clips: no thumbnails, a film icon instead */
+.kb-pmvg-tplic { display: grid; place-items: center; aspect-ratio: 16 / 9; color: var(--pink); background: var(--tone) 0 0 / 7px 7px, var(--bg-2); }
+.kb-pmvg-tplic .kb-ic { width: 28px; height: 28px; }
+
+@media (max-width: 600px) {
+  .kb-solo-note { display: none; }
+}
