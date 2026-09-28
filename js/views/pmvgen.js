@@ -24,7 +24,8 @@ const DEFAULTS = {
   matchCut: true, // pick the best-matching clip at each cut
   cut: "auto",
   layouts: { full: true, kaleido: true, duo: true, trim: true, tri: true, quad: true },
-  fx: { flash: true, zoom: true, shake: true, glitch: true, stutter: true, hue: false, rgb: true, echo: true, tunnel: true, invert: true, whip: true, zoomin: true, speed: true, voice: true, vhs: false, strobe: false, text: false, kenburns: true, lines: true },
+  // Effects: a calm start – zoom-in entry, flash, zoom pulse and RGB split; the rest is opt-in
+  fx: { flash: true, zoom: true, shake: false, glitch: false, stutter: false, hue: false, rgb: true, echo: false, tunnel: false, invert: false, whip: false, zoomin: true, speed: false, voice: true, vhs: false, strobe: false, text: false, kenburns: true, lines: true },
   words: "",
   look: "none", // color look: none | warm | pink | cold | bw | noir | vivid
   lookEven: true, // even out clip brightness
