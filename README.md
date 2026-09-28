@@ -2,7 +2,7 @@
 
 Pick a song and a folder of clips – on every beat it cuts to the next one: split-screen layouts like real PMVs, effects on cuts, beats and drops, beat-synced speed ramps and clip audio. It runs live in the browser and can record the result as a video. It can also analyze an existing PMV and rebuild it with your own clips.
 
-**Open it:** https://anonym88312.github.io/pmvgenerator-web/
+**Open it:** https://pmvgen.github.io
 
 This is the standalone web version of the PMV Generator from [stash-pmv-plugins](https://github.com/anonym88312/stash-pmv-plugins) – it doesn't need Stash or any server.
 
