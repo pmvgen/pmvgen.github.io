@@ -17,7 +17,7 @@ Everything happens in your browser. Songs and clips are opened straight from you
    - **What**: videos, images or both · **Clip shape**: all, portrait only, landscape only.
    - **Folders**: limit the clips to some of the added folders.
    - **Clip selection**: best moments instead of random spots, smart crop, match cuts, variety.
-3. **Style**: mood presets (*PMV classic*, *Maximal*, *Hypno*, *Clean*) and five tabs – cutting and layouts (fullscreen, kaleidoscope, 2-way, 3-way mirrored, 3-way, 4-way), effects on cuts / beats / drops, color look and format (16:9 or 9:16), song and clip volume, intro/outro and recording quality (720p/1080p).
+3. **Style**: mood presets (*PMV classic*, *Maximal*, *Hypno*, *Clean*) and five sections – cutting and layouts (fullscreen, kaleidoscope, 2-way, 3-way mirrored, 3-way, 4-way), effects on cuts / beats / drops, look & picture (color look, 16:9 or 9:16, **Fit** shows the whole clip with a blurred border, **Fill** crops it to fill the frame), song and clip volume, intro/outro and recording quality (720p/1080p). All sections are open; click a section's header to collapse it, or use **Collapse all**.
 4. **Go**: runs as a fullscreen show (Space pause, F fullscreen, Esc stop). With **Record** you get a WebM video to download – the duration is written into the file right in the browser, so players show the length and can seek.
 
 The clips you add are kept only while the page is open – after a reload, add the folder again (your folder choice and all settings are remembered).

@@ -36,10 +36,11 @@ const DEFAULTS = {
   title: "", // empty = song name
   format: "16:9",
   split: "cols",
-  fit: "cover",
+  fit: "contain", // contain = whole clip, blurred border (less confusing than cropping); cover = fill
   quality: 720,
   record: true,
-  tab: "cut", // last open style tab
+  collapsed: {}, // style sections the user closed (all open by default)
+  v: 2, // settings version
 };
 const FX = {
   flash: ["Flash", "Bright flash on cuts and drops"],
@@ -91,19 +92,27 @@ const CUTS = [
   ["2", "Every 2 beats", ""],
   ["4", "Every 4 beats", ""],
 ];
-const TABS = [
-  ["cut", "Cutting"],
-  ["fx", "Effects"],
-  ["look", "Look"],
-  ["sound", "Sound"],
-  ["out", "Output"],
+const SECTIONS = [
+  ["cut", "Cutting", "When to cut and which split screens"],
+  ["fx", "Effects", "What happens on cuts, beats and drops"],
+  ["look", "Look & picture", "Colors, format and how clips fill the frame"],
+  ["sound", "Sound", "Song and clip volume"],
+  ["out", "Output", "Intro, outro and recording"],
 ];
+const CHEVRON = `<svg class="kb-pmvg-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 // A row with a switch; path = "bestSpots" or "fx.flash"
 const sw = (path, name, desc) =>
   `<label class="kb-pmvg-opt"><span><b>${esc(name)}</b>${desc ? `<small>${esc(desc)}</small>` : ""}</span>` +
   `<span class="kb-switch"><input type="checkbox" data-t="${path}"><i></i></span></label>`;
 const fxSw = (k) => sw("fx." + k, FX[k][0], FX[k][1]);
+// Header of a style section: the whole bar opens/closes it
+function secHead(key) {
+  const [, name, sub] = SECTIONS.find(([k]) => k === key);
+  return `<button type="button" class="kb-pmvg-sechead" data-toggle="${key}" aria-controls="pmvg-pane-${key}">
+    <span class="kb-pmvg-sectitle"><b>${name}</b><small data-tabsum="${key}"></small></span>
+    <span class="kb-pmvg-secsub">${sub}</span>${CHEVRON}</button>`;
+}
 const getPath = (S, p) => p.split(".").reduce((o, k) => (o ? o[k] : undefined), S);
 function setPath(S, p, v) {
   const ks = p.split(".");
@@ -112,9 +121,13 @@ function setPath(S, p, v) {
 }
 
 export function render(main) {
-  const S = Object.assign({}, DEFAULTS, store.get("pmvgen", {}));
+  const stored = store.get("pmvgen", {});
+  const S = Object.assign({}, DEFAULTS, stored);
   S.fx = Object.assign({}, DEFAULTS.fx, S.fx);
   S.layouts = Object.assign({}, DEFAULTS.layouts, S.layouts);
+  S.collapsed = Object.assign({}, S.collapsed);
+  // Settings from before version 2 had "Fill" as default – people took the cropping for a bug
+  if (!stored.v) S.fit = "contain";
   if (!Array.isArray(S.folders)) S.folders = [];
   const save = () => store.set("pmvgen", S);
   let song = null; // beat detection result + name
@@ -216,66 +229,81 @@ export function render(main) {
           <span class="kb-lab-t">Mood <small>– sets cutting, layouts and effects in one go</small></span>
           <div class="kb-chips" data-presets>${Object.entries(PRESETS).map(([k, p]) => `<button type="button" class="kb-chip kb-pmvg-preset" data-preset="${k}">${p.name}</button>`).join("")}</div>
         </div>
-        <div class="kb-pmvg-tabs" role="tablist">${TABS.map(([k, l]) => `<button type="button" role="tab" data-tab="${k}">${l}<small data-tabsum="${k}"></small></button>`).join("")}</div>
+        <div class="kb-pmvg-sechead-all"><span class="kb-lab-t">Settings</span><button type="button" class="kb-btn is-ghost" data-collapseall></button></div>
 
-        <div class="kb-pmvg-pane" data-pane="cut">
-          <span class="kb-lab-t">Cutting</span>
-          <div class="kb-seg" data-seg="cut">${CUTS.map(([v, l, t]) => `<button type="button" data-v="${v}" title="${esc(t)}">${l}</button>`).join("")}</div>
-          <span class="kb-lab-t">Layouts <small>– change to the beat, the louder the more fields</small></span>
-          <div class="kb-chips kb-pmvg-layouts" data-layouts>${Object.entries(LAYOUTS).map(([k, l]) => `<button type="button" class="kb-chip" data-l="${k}" title="${esc(l.hint)}">${layoutIcon(k)}${l.name}</button>`).join("")}</div>
-          <span class="kb-lab-t">Fields in 2-/3-way layouts</span>
-          <div class="kb-seg" data-seg="split"><button type="button" data-v="cols" title="Columns – also in portrait format">side by side</button><button type="button" data-v="rows" title="Rows">stacked</button></div>
-          <p class="kb-hint kb-pmvg-tip" data-tip hidden></p>
-        </div>
-
-        <div class="kb-pmvg-pane" data-pane="fx" hidden>
-          ${FX_GROUPS.map(([name, sub, keys]) => `
-            <div class="kb-pmvg-group">
-              <div class="kb-pmvg-grouphead"><b>${name}</b>${sub ? `<small>${sub}</small>` : ""}<span class="kb-spacer"></span>
-                <button type="button" class="kb-btn is-ghost kb-pmvg-all" data-all="${keys.join(",")}">All on</button></div>
-              <div class="kb-pmvg-opts">${keys.map(fxSw).join("")}</div>
-              ${keys.includes("text") ? `<input class="kb-field kb-pmvg-words" data-words placeholder="Words for “Text”, comma separated – e.g. DROP, MORE, YES" value="${esc(S.words)}">` : ""}
-            </div>`).join("")}
-        </div>
-
-        <div class="kb-pmvg-pane" data-pane="look" hidden>
-          <span class="kb-lab-t">Color look <small>– all clips in the same color mood</small></span>
-          <div class="kb-seg kb-pmvg-looks" data-seg="look">${LOOKS.map(([v, l]) => `<button type="button" data-v="${v}"><i class="kb-pmvg-lookdot is-${v}"></i>${l}</button>`).join("")}</div>
-          <div class="kb-pmvg-opts">
-            ${sw("lookEven", "Even out brightness", "Clips that are too dark get brightened, too bright ones toned down – looks all of a piece")}
-            ${LOOK_FX.map(fxSw).join("")}
-          </div>
-          <span class="kb-lab-t">Picture</span>
-          <div class="kb-pmvg-row">
-            <div class="kb-seg" data-seg="format"><button type="button" data-v="16:9">16:9 landscape</button><button type="button" data-v="9:16">9:16 portrait</button></div>
-            <div class="kb-seg" data-seg="fit"><button type="button" data-v="cover" title="Picture fills everything, edges are cropped">Fill</button><button type="button" data-v="contain" title="Whole picture, rest blurred">Fit</button></div>
+        <div class="kb-pmvg-sec" data-sec="cut">
+          ${secHead("cut")}
+          <div class="kb-pmvg-pane" id="pmvg-pane-cut" data-pane="cut">
+            <span class="kb-lab-t">When to cut</span>
+            <div class="kb-seg" data-seg="cut">${CUTS.map(([v, l, t]) => `<button type="button" data-v="${v}" title="${esc(t)}">${l}</button>`).join("")}</div>
+            <span class="kb-lab-t">Layouts <small>– change to the beat, the louder the more fields</small></span>
+            <div class="kb-chips kb-pmvg-layouts" data-layouts>${Object.entries(LAYOUTS).map(([k, l]) => `<button type="button" class="kb-chip" data-l="${k}" title="${esc(l.hint)}">${layoutIcon(k)}${l.name}</button>`).join("")}</div>
+            <span class="kb-lab-t">Fields in 2-/3-way layouts</span>
+            <div class="kb-seg" data-seg="split"><button type="button" data-v="cols" title="Columns – also in portrait format">side by side</button><button type="button" data-v="rows" title="Rows">stacked</button></div>
+            <p class="kb-hint kb-pmvg-tip" data-tip hidden></p>
           </div>
         </div>
 
-        <div class="kb-pmvg-pane" data-pane="sound" hidden>
-          <span class="kb-lab-t">Volume</span>
-          <div class="kb-pmvg-sound">
-            <label class="kb-pmvg-range"><span>${icon("music")}Song</span><input type="range" min="0" max="100" step="5" data-r="songVol" aria-label="Song volume"><output data-ro="songVol"></output></label>
-            <label class="kb-pmvg-range" data-clipvol><span>${icon("film")}Clips</span><input type="range" min="0" max="100" step="5" data-r="clipVol" aria-label="Clip volume"><output data-ro="clipVol"></output></label>
+        <div class="kb-pmvg-sec" data-sec="fx">
+          ${secHead("fx")}
+          <div class="kb-pmvg-pane" id="pmvg-pane-fx" data-pane="fx">
+            ${FX_GROUPS.map(([name, sub, keys]) => `
+              <div class="kb-pmvg-group">
+                <div class="kb-pmvg-grouphead"><b>${name}</b>${sub ? `<small>${sub}</small>` : ""}<span class="kb-spacer"></span>
+                  <button type="button" class="kb-btn is-ghost kb-pmvg-all" data-all="${keys.join(",")}">All on</button></div>
+                <div class="kb-pmvg-opts">${keys.map(fxSw).join("")}</div>
+                ${keys.includes("text") ? `<input class="kb-field kb-pmvg-words" data-words placeholder="Words for “Text”, comma separated – e.g. DROP, MORE, YES" value="${esc(S.words)}">` : ""}
+              </div>`).join("")}
           </div>
-          <div class="kb-pmvg-opts">${fxSw("voice")}</div>
-          <span class="kb-lab-t" data-voicewhen>Clip audio plays</span>
-          <div class="kb-seg" data-seg="voiceMode"><button type="button" data-v="drops" title="Fade in briefly on drops only – like the voice-overs in real PMVs">Only on drops</button><button type="button" data-v="always" title="The clips can be heard all the time, under the song">Always</button></div>
-          <p class="kb-hint" data-voicehint></p>
-          <p class="kb-hint">Both end up in the recording exactly like this. With several clips at once (split screen) they share the clip volume.</p>
         </div>
 
-        <div class="kb-pmvg-pane" data-pane="out" hidden>
-          <div class="kb-pmvg-opts">
-            ${sw("intro", "Intro", "Title card at the start: your title slams in, comic-SFX style")}
-            ${sw("outro", "Outro", "Credits at the end: the picture fades dark, title and number of clips")}
+        <div class="kb-pmvg-sec" data-sec="look">
+          ${secHead("look")}
+          <div class="kb-pmvg-pane" id="pmvg-pane-look" data-pane="look">
+            <span class="kb-lab-t">Color look <small>– all clips in the same color mood</small></span>
+            <div class="kb-seg kb-pmvg-looks" data-seg="look">${LOOKS.map(([v, l]) => `<button type="button" data-v="${v}"><i class="kb-pmvg-lookdot is-${v}"></i>${l}</button>`).join("")}</div>
+            <div class="kb-pmvg-opts">
+              ${sw("lookEven", "Even out brightness", "Clips that are too dark get brightened, too bright ones toned down – looks all of a piece")}
+              ${LOOK_FX.map(fxSw).join("")}
+            </div>
+            <span class="kb-lab-t">Picture <small>– “Fit” shows the whole clip, “Fill” crops it to fill the frame</small></span>
+            <div class="kb-pmvg-row">
+              <div class="kb-seg" data-seg="format"><button type="button" data-v="16:9">16:9 landscape</button><button type="button" data-v="9:16">9:16 portrait</button></div>
+              <div class="kb-seg" data-seg="fit"><button type="button" data-v="contain" title="Whole picture, rest blurred">Fit</button><button type="button" data-v="cover" title="Picture fills everything, edges are cropped">Fill</button></div>
+            </div>
           </div>
-          <input class="kb-field" data-title placeholder="Title for intro/outro – empty = song name" value="${esc(S.title)}">
-          <div class="kb-pmvg-opts">
-            ${sw("record", "Record", "Saves the result as a video file (WebM) you can download")}
+        </div>
+
+        <div class="kb-pmvg-sec" data-sec="sound">
+          ${secHead("sound")}
+          <div class="kb-pmvg-pane" id="pmvg-pane-sound" data-pane="sound">
+            <span class="kb-lab-t">Volume</span>
+            <div class="kb-pmvg-sound">
+              <label class="kb-pmvg-range"><span>${icon("music")}Song</span><input type="range" min="0" max="100" step="5" data-r="songVol" aria-label="Song volume"><output data-ro="songVol"></output></label>
+              <label class="kb-pmvg-range" data-clipvol><span>${icon("film")}Clips</span><input type="range" min="0" max="100" step="5" data-r="clipVol" aria-label="Clip volume"><output data-ro="clipVol"></output></label>
+            </div>
+            <div class="kb-pmvg-opts">${fxSw("voice")}</div>
+            <span class="kb-lab-t" data-voicewhen>Clip audio plays</span>
+            <div class="kb-seg" data-seg="voiceMode"><button type="button" data-v="drops" title="Fade in briefly on drops only – like the voice-overs in real PMVs">Only on drops</button><button type="button" data-v="always" title="The clips can be heard all the time, under the song">Always</button></div>
+            <p class="kb-hint" data-voicehint></p>
+            <p class="kb-hint">Both end up in the recording exactly like this. With several clips at once (split screen) they share the clip volume.</p>
           </div>
-          <span class="kb-lab-t">Recording quality</span>
-          <div class="kb-seg" data-seg="quality"><button type="button" data-v="720">720p</button><button type="button" data-v="1080">1080p</button></div>
+        </div>
+
+        <div class="kb-pmvg-sec" data-sec="out">
+          ${secHead("out")}
+          <div class="kb-pmvg-pane" id="pmvg-pane-out" data-pane="out">
+            <div class="kb-pmvg-opts">
+              ${sw("intro", "Intro", "Title card at the start: your title slams in, comic-SFX style")}
+              ${sw("outro", "Outro", "Credits at the end: the picture fades dark, title and number of clips")}
+            </div>
+            <input class="kb-field" data-title placeholder="Title for intro/outro – empty = song name" value="${esc(S.title)}">
+            <div class="kb-pmvg-opts">
+              ${sw("record", "Record", "Saves the result as a video file (WebM) you can download")}
+            </div>
+            <span class="kb-lab-t">Recording quality</span>
+            <div class="kb-seg" data-seg="quality"><button type="button" data-v="720">720p</button><button type="button" data-v="1080">1080p</button></div>
+          </div>
         </div>
       </section>
       </div>
@@ -304,12 +332,15 @@ export function render(main) {
     const words = $("[data-words]");
     if (words) words.hidden = !S.fx.text;
     $("[data-title]").hidden = !S.intro && !S.outro;
-    main.querySelectorAll("[data-tab]").forEach((b) => {
-      const on = b.dataset.tab === S.tab;
-      b.classList.toggle("is-on", on);
-      b.setAttribute("aria-selected", on);
+    main.querySelectorAll("[data-sec]").forEach((sec) => {
+      const open = !S.collapsed[sec.dataset.sec];
+      sec.classList.toggle("is-open", open);
+      sec.querySelector("[data-toggle]").setAttribute("aria-expanded", open);
+      sec.querySelector("[data-pane]").hidden = !open;
     });
-    main.querySelectorAll("[data-pane]").forEach((p) => (p.hidden = p.dataset.pane !== S.tab));
+    const anyOpen = SECTIONS.some(([k]) => !S.collapsed[k]);
+    $("[data-collapseall]").innerHTML = `${CHEVRON}${anyOpen ? "Collapse all" : "Expand all"}`;
+    $("[data-collapseall]").classList.toggle("is-closed", !anyOpen);
     main.querySelectorAll("[data-r]").forEach((r) => {
       r.value = S[r.dataset.r];
       r.style.setProperty("--p", S[r.dataset.r] + "%");
@@ -325,7 +356,7 @@ export function render(main) {
     paintSummary();
   }
 
-  // Summary: on the tabs and in the Go card
+  // Summary: on the section headers and in the Go card
   function paintSummary() {
     const fxOn = Object.keys(FX).filter((k) => S.fx[k] && !LOOK_FX.includes(k) && k !== "voice").length;
     const lays = Object.keys(LAYOUTS).filter((k) => S.layouts[k]).length;
@@ -372,9 +403,15 @@ export function render(main) {
       if (key === "source" || key === "shape") updateCount();
       paintTip();
     }
-    const tab = e.target.closest("[data-tab]");
-    if (tab) {
-      S.tab = tab.dataset.tab;
+    const tog = e.target.closest("[data-toggle]");
+    if (tog) {
+      S.collapsed[tog.dataset.toggle] = !S.collapsed[tog.dataset.toggle];
+      save();
+      paintSegs();
+    }
+    if (e.target.closest("[data-collapseall]")) {
+      const close = SECTIONS.some(([k]) => !S.collapsed[k]);
+      S.collapsed = close ? Object.fromEntries(SECTIONS.map(([k]) => [k, true])) : {};
       save();
       paintSegs();
     }
