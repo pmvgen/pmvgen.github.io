@@ -10,6 +10,18 @@ This is the standalone web version of the PMV Generator from [stash-pmv-plugins]
 
 Everything happens in your browser. Songs and clips are opened straight from your disk and are **never uploaded** – the page is plain static HTML and JavaScript without any backend, tracking or analytics. Your settings are remembered in your browser's local storage.
 
+## Terms of use & disclaimer
+
+This tool is meant for making music edits from **your own media**. The site asks you to accept these terms before it opens:
+
+- You are **18 or older** (or of legal age where you live).
+- You only use videos, images and music that **you own or have permission to use**.
+- You **never** use content showing **anyone under 18**.
+- You **never** use footage of real people **without their consent** – in particular, no sexual content of anyone who hasn't agreed to it.
+- You follow the law where you live, including copyright and privacy law.
+
+Everything runs locally in your browser – the author never receives, sees, stores or controls any media or anything made with this tool. **Users are solely responsible for what they create and share.** The author does not condone any misuse and accepts no liability for it. The software is provided “as is”, without warranty of any kind, under the [MIT license](LICENSE).
+
 ## Using it
 
 1. **Music**: drop or choose a song (MP3, M4A, WAV, OGG, FLAC). Tempo and beats are detected in the browser. If the tempo is off, **½ tempo** / **2× tempo** help, and **Earlier** / **Later** shift the cuts by 20 ms. Or use **PMV as template** (see below).
