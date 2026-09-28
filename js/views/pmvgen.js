@@ -1298,13 +1298,19 @@ class Generator {
       if (ev.type === "stutter") this.stutter(t);
       if (ev.type === "strobe") this.comp.strobe(t);
     }
-    this.trackFocus();
-    this.st.t = t;
-    this.st.slots = this.slots;
-    this.st.groups = this.groups;
-    this.st.cutT = this.cutT;
-    this.st.cutCount = this.cuts;
-    this.comp.draw(this.st);
+    // Draw at most ~60 times a second: 120/144 Hz screens would double the work for nothing
+    // (beats and cuts above are still checked on every frame, so the timing stays exact)
+    const ms = performance.now();
+    if (!this.drawMs || ms - this.drawMs >= 15) {
+      this.drawMs = ms;
+      this.trackFocus();
+      this.st.t = t;
+      this.st.slots = this.slots;
+      this.st.groups = this.groups;
+      this.st.cutT = this.cutT;
+      this.st.cutCount = this.cuts;
+      this.comp.draw(this.st);
+    }
     if (!this.hudT || performance.now() - this.hudT > 250) {
       this.hudT = performance.now();
       this.h("time").textContent = `${fmtDuration(Math.max(0, t))} / ${fmtDuration(this.song.duration)}`;

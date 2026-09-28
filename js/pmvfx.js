@@ -83,6 +83,7 @@ export class Compositor {
     this.red = off(this.W, this.H); // for RGB split
     this.cyan = off(this.W, this.H);
     this.grain = makeGrain(off(256, 256));
+    this.backs = []; // tiny canvases for the blurred border in "Fit" mode (one per field)
     this.lines = makeScanlines(off(4, 4));
   }
 
@@ -172,7 +173,7 @@ export class Compositor {
         zoom *= from + (1 - from) * ease;
         if (from < 1 && p < 0.35) filter += ` brightness(${(1 + 0.6 * (1 - p / 0.35)).toFixed(2)})`; // short flare when zooming out
       }
-      if (this.S.fit === "contain") drawIn(g, m, s, "cover", 1.15, 0, 0, (filter + " blur(22px) brightness(.45)").trim());
+      if (this.S.fit === "contain") this.backdrop(i, m, s);
       drawIn(g, m, s, this.S.fit, zoom, ox, oy, filter.trim(), fx.kenburns);
     });
 
@@ -353,6 +354,34 @@ export class Compositor {
     g.font = `600 ${size * 0.28}px Bahnschrift, "Segoe UI", sans-serif`;
     g.fillStyle = "rgba(251, 239, 244, .75)";
     g.fillText(this.credits(), W / 2, H / 2 + size * 0.8);
+    g.restore();
+  }
+
+  // Blurred, darkened border behind a fitted clip. A full-size blur(22px) per field and frame was
+  // far too slow (≈10 fps without a strong GPU) – instead the clip goes into a canvas 1/16 of the
+  // field's size, gets a tiny blur there and is scaled up: the upscaling does the rest of the blur.
+  backdrop(i, m, s) {
+    const k = 16;
+    const bw = Math.max(4, Math.ceil(s.w / k));
+    const bh = Math.max(4, Math.ceil(s.h / k));
+    let c = this.backs[i];
+    if (!c) c = this.backs[i] = document.createElement("canvas");
+    if (c.width !== bw || c.height !== bh) {
+      c.width = bw;
+      c.height = bh;
+    }
+    const x = c.getContext("2d");
+    const r = Math.max(bw / m.w, bh / m.h) * 1.15;
+    x.filter = "blur(1.5px)";
+    x.drawImage(m.el, (bw - m.w * r) / 2, (bh - m.h * r) / 2, m.w * r, m.h * r);
+    x.filter = "none";
+    const { g } = this;
+    g.save();
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = "medium";
+    g.drawImage(c, 1, 1, bw - 2, bh - 2, s.x, s.y, s.w, s.h); // skip the soft edge pixels
+    g.fillStyle = "rgba(0, 0, 0, .55)";
+    g.fillRect(s.x, s.y, s.w, s.h);
     g.restore();
   }
 
