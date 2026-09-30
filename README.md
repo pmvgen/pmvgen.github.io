@@ -8,7 +8,7 @@ This is the standalone web version of the PMV Generator from [stash-pmv-plugins]
 
 ## Privacy
 
-Everything happens in your browser. Songs and clips are opened straight from your disk and are **never uploaded** – the page is plain static HTML and JavaScript without any backend, tracking or analytics. Your settings are remembered in your browser's local storage.
+Everything happens in your browser. Songs and clips are opened straight from your disk and are **never uploaded** – the page is plain static HTML and JavaScript without any backend, tracking or analytics. Your settings are remembered in your browser's local storage. Only if you use **Plex** does the page talk to plex.tv (to sign in) and to your own Plex server – straight from your browser, nothing passes through anyone else; the Plex key stays in your browser, and **Sign out** removes it.
 
 ## Terms of use & disclaimer
 
@@ -24,13 +24,13 @@ Everything runs locally in your browser – the author never receives, sees, sto
 
 ## Using it
 
-1. **Music**: drop or choose a song (MP3, M4A, WAV, OGG, FLAC) – or a video, then its music is used. Tempo and beats are detected in the browser. If the tempo is off, **½ tempo** / **2× tempo** help, and **Earlier** / **Later** shift the cuts by 20 ms. **Only use … Cut** takes just a part of the song (e.g. without the intro); **Whole song again** undoes it. Or use **PMV as template** (see below).
+1. **Music**: drop or choose a song (MP3, M4A, WAV, OGG, FLAC) – or a video, then its music is used. Tempo and beats are detected in the browser. If the tempo is off, **½ tempo** / **2× tempo** help, and **Earlier** / **Later** shift the cuts by 20 ms. **Only use … Cut** takes just a part of the song (e.g. without the intro); **Whole song again** undoes it. **Several songs**: drop or choose several files (or a folder) – they play one after another, optionally shuffled. Or take the music from **Plex**, or use **PMV as template** (both below).
 2. **Clips**: drop one or more folders onto the card, or click it to choose a folder (subfolders are included). Single files work too. Supported: MP4, WebM, MOV, MKV (whatever your browser can play) and JPG, PNG, WebP, GIF, AVIF.
    - **What**: videos, images or both · **Clip shape**: all, portrait only, landscape only.
    - **Folders**: limit the clips to some of the added folders.
    - **Clip selection**: best moments instead of random spots, smart crop, match cuts, variety.
 3. **Style**: mood presets (*PMV classic*, *Maximal*, *Hypno*, *Clean*) and five sections – cutting and layouts (fullscreen, kaleidoscope, 2-way, 3-way mirrored, 3-way, 4-way), effects on cuts / beats / drops, look & picture (color look, 16:9 or 9:16, **Fit** shows the whole clip with a blurred border, **Fill** crops it to fill the frame), song and clip volume, intro/outro and recording quality (720p/1080p). All sections are open; click a section's header to collapse it, or use **Collapse all**.
-4. **Go**: runs as a fullscreen show (Space pause, F fullscreen, Esc stop). With **Record** you get a WebM video to download – the duration is written into the file right in the browser, so players show the length and can seek.
+4. **Go**: runs as a fullscreen show (Space pause, F fullscreen, Esc stop; with several songs N / P or the buttons in the bar skip). With **Record** you get a WebM video to download – the duration is written into the file right in the browser, so players show the length and can seek.
 
 The clips you add are kept only while the page is open – after a reload, add the folder again (your folder choice and all settings are remembered).
 
@@ -40,6 +40,15 @@ Tip: three full-size portrait clips side by side = format **16:9** + layout 3-wa
 
 - **Liquid glass**: the switch at the top right turns the see-through glass look on or off (on by default).
 - **Languages**: English, and Simplified Chinese when your browser is set to Chinese.
+
+## Music from Plex
+
+Switch step 1 to **Plex** and **Sign in with Plex** – you confirm on plex.tv like with any Plex app (no password passes through this page). Then:
+
+- **Follow what's playing**: a live visualizer for whatever you play in Plex – Plexamp, your phone, the Plex web app, a TV. The sound stays in your Plex player; the show follows song changes, pause and seeking. Your speakers may be late (Bluetooth, TV): press **T** (or **Tap**) along to the beat you hear and the offset sets itself; **− / +** or **[ / ]** shift it by hand. It's remembered per Plex player. Nothing is recorded in this mode.
+- **A playlist** or **Shuffle all**: songs from your Plex library, played here.
+
+This page is served over https, so your browser only lets it reach a Plex server that offers **secure connections** – with Plex's default settings and Remote Access that's the case. If your server can't be reached, the Stash plugin version (on `http://localhost`) reaches it in your local network directly.
 
 ## PMV as template
 

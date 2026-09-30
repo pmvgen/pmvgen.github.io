@@ -541,6 +541,25 @@
 .kb-pmvg-tpl span { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; min-width: 0; }
 .kb-pmvg-tpl b { overflow: hidden; font: 600 13.5px/1.3 var(--f-text); white-space: nowrap; text-overflow: ellipsis; }
 .kb-pmvg-tpl small { color: var(--faint); font-size: 12px; }
+.kb-pmvg-tpl.is-on { border-color: var(--pink); box-shadow: inset 0 0 0 1px var(--pink); }
+/* Music from Plex / several songs */
+[data-plexpane] > div + div, [data-plexok] > * + * { margin-top: 12px; }
+[data-plexpane] .kb-pmvg-songhead { align-items: center; }
+[data-plexpane] .kb-pmvg-songhead b { font-size: 20px; }
+.kb-pmvg-np { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--bg-3); border-radius: 6px; background: var(--base); }
+.kb-pmvg-np svg { flex: none; width: 18px; height: 18px; color: var(--pink); }
+.kb-pmvg-np span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kb-pmvg-np b { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.kb-pmvg-np small { color: var(--faint); font-size: 12px; }
+.kb-pmvg-listinfo { margin-top: 10px; }
+.kb-pmvg-listinfo .kb-hint { margin: 0 0 4px; }
+.kb-pmvg-plex { padding: 2px 6px; border-radius: 3px; color: #1f1f1f; font-weight: 700; background: #e5a00d; }
+.kb-pmvg-sync { display: inline-flex; align-items: center; gap: 2px; font-variant-numeric: tabular-nums; }
+.kb-pmvg-sync .kb-btn { min-width: 30px; padding-inline: 8px; }
+.kb-pmvg-sync [data-h="sync"] { min-width: 54px; text-align: center; }
+.kb-pmvg-stage.is-tap [data-act="tap"] { animation: kb-pmvg-tap .3s ease-out; }
+@keyframes kb-pmvg-tap { from { color: var(--paper); background: var(--pink); } }
+.kb-pmvg-hud [data-h="track"] { color: var(--faint); font-variant-numeric: tabular-nums; }
 .kb-pmvg-tplprog { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px 12px; padding: 14px 16px; border: 1px solid var(--pink); border-radius: 6px; background: var(--base); }
 .kb-pmvg-tplprog b { font: 700 18px/1.2 var(--f-display); font-stretch: 85%; }
 .kb-pmvg-tplprog span { color: var(--text-2); font-size: 13px; text-align: right; }
