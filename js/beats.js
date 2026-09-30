@@ -7,7 +7,20 @@
 const HOP = 512;
 
 export async function analyzeSong(arrayBuffer) {
-  const buf = await new OfflineAudioContext(1, 1, 44100).decodeAudioData(arrayBuffer);
+  return analyzeBuffer(await new OfflineAudioContext(1, 1, 44100).decodeAudioData(arrayBuffer));
+}
+
+// Only a part of a decoded song (seconds) – e.g. the music from a longer video
+export function sliceBuffer(buf, start, end) {
+  const sr = buf.sampleRate;
+  const a = Math.max(0, Math.floor(start * sr));
+  const b = Math.min(buf.length, Math.ceil((end || buf.duration) * sr));
+  const out = new AudioBuffer({ length: Math.max(1, b - a), numberOfChannels: buf.numberOfChannels, sampleRate: sr });
+  for (let c = 0; c < buf.numberOfChannels; c++) out.copyToChannel(buf.getChannelData(c).subarray(a, b), c);
+  return out;
+}
+
+export async function analyzeBuffer(buf) {
   const sr = buf.sampleRate;
   const fps = sr / HOP;
   const mono = mixdown(buf);

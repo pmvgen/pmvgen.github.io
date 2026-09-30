@@ -24,7 +24,7 @@ Everything runs locally in your browser – the author never receives, sees, sto
 
 ## Using it
 
-1. **Music**: drop or choose a song (MP3, M4A, WAV, OGG, FLAC). Tempo and beats are detected in the browser. If the tempo is off, **½ tempo** / **2× tempo** help, and **Earlier** / **Later** shift the cuts by 20 ms. Or use **PMV as template** (see below).
+1. **Music**: drop or choose a song (MP3, M4A, WAV, OGG, FLAC) – or a video, then its music is used. Tempo and beats are detected in the browser. If the tempo is off, **½ tempo** / **2× tempo** help, and **Earlier** / **Later** shift the cuts by 20 ms. **Only use … Cut** takes just a part of the song (e.g. without the intro); **Whole song again** undoes it. Or use **PMV as template** (see below).
 2. **Clips**: drop one or more folders onto the card, or click it to choose a folder (subfolders are included). Single files work too. Supported: MP4, WebM, MOV, MKV (whatever your browser can play) and JPG, PNG, WebP, GIF, AVIF.
    - **What**: videos, images or both · **Clip shape**: all, portrait only, landscape only.
    - **Folders**: limit the clips to some of the added folders.
@@ -35,6 +35,11 @@ Everything runs locally in your browser – the author never receives, sees, sto
 The clips you add are kept only while the page is open – after a reload, add the folder again (your folder choice and all settings are remembered).
 
 Tip: three full-size portrait clips side by side = format **16:9** + layout 3-way + “Portrait only”.
+
+## Look and language
+
+- **Liquid glass**: the switch at the top right turns the see-through glass look on or off (on by default).
+- **Languages**: English, and Simplified Chinese when your browser is set to Chinese.
 
 ## PMV as template
 

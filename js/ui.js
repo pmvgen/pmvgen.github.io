@@ -1,5 +1,7 @@
 // Small helpers for display, formatting, messages and dialogs.
 
+import { t, locale } from "./i18n.js";
+
 export const esc = (s) =>
   String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -52,6 +54,12 @@ const ICONS = {
   heart: '<path d="M12 20s-7-4.3-8.9-8.7C1.7 8.1 3.7 4.6 7.1 4.6c2 0 3.6 1.2 4.9 3 1.3-1.8 2.9-3 4.9-3 3.4 0 5.4 3.5 4 6.7C19 15.7 12 20 12 20z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
   music: '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17.5V5.5l10-2v12"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/></g>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/>',
+  chart: '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 20h16"/><path d="M7 16v-5M12 16V6M17 16v-8"/></g>',
+  copies: '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="1.5"/><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/></g>',
+  cast: '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 17a3.5 3.5 0 0 1 3.5 3.5M3.5 13.5a7 7 0 0 1 7 7M3.5 10a10.5 10.5 0 0 1 10.5 10.5"/><path d="M3.5 7V5.5A1.5 1.5 0 0 1 5 4h14a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 19 20h-3"/></g>',
+  pip: '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="1.5"/></g><rect x="12" y="11.5" width="7" height="5.5" rx="1" fill="currentColor"/>',
+  person: '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M4.8 20c.6-3.9 3.5-6.2 7.2-6.2s6.6 2.3 7.2 6.2"/></g>',
+  phone: '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2" stroke-linecap="round"/></g>',
 };
 export const icon = (name) => `<svg class="kb-ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ""}</svg>`;
 
@@ -89,24 +97,28 @@ export function fmtDate(iso) {
   if (!iso) return "";
   const d = new Date(iso);
   if (isNaN(d)) return iso;
-  return d.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
+  return d.toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" });
 }
 export function fmtAgo(iso) {
   if (!iso) return "";
   const s = (Date.now() - new Date(iso)) / 1000;
-  if (s < 90) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)} min ago`;
-  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-  if (s < 86400 * 30) return `${Math.round(s / 86400)} days ago`;
+  if (s < 90) return t("just now");
+  if (s < 3600) return t("{n} min ago", { n: Math.round(s / 60) });
+  if (s < 86400) return t("{n} h ago", { n: Math.round(s / 3600) });
+  if (s < 86400 * 30) return t("{n} days ago", { n: Math.round(s / 86400) });
   return fmtDate(iso);
 }
-export const fmtNum = (n) => Number(n || 0).toLocaleString("en-US");
-export const plural = (n, one, many) => `${fmtNum(n)} ${n === 1 ? one : many}`;
+export const fmtNum = (n) => Number(n || 0).toLocaleString(locale());
+// The unit words are translated too: plural(3, "scene", "scenes") → "3 scenes" / "3 个场景"
+export const plural = (n, one, many) => `${fmtNum(n)} ${t(n === 1 ? one : many)}`;
 
 // Inventory number like in a museum: S-12 (scene), I-40 (image), G-3 (gallery)
 export const invNo = (kind, id) => `${{ scene: "S", image: "I", gallery: "G" }[kind]}-${id}`;
 
 // ---------- Storage ----------
+
+// Folders: "all" (navigation, home page, Folders page), "page" (only the Folders page) or "off"
+export const folderMode = () => store.get("folderMode") || (store.get("railFolders", true) ? "all" : "page");
 
 export const store = {
   get(key, fallback) {
@@ -140,7 +152,7 @@ export function toast(msg, type) {
 
 export function errorToast(e, what) {
   console.error("[PMV Generator]", e);
-  toast(`${what || "Error"}: ${e.message || e}`, "error");
+  toast(`${what ? t(what) : t("Error")}: ${e.message || e}`, "error");
 }
 
 // ---------- Dialogs ----------
@@ -148,7 +160,7 @@ export function errorToast(e, what) {
 const overlayRoot = () => document.getElementById("overlay-root");
 
 // Confirmation with an optional checkbox. Returns { ok, checked }.
-export function confirmDialog({ title, text, ok = "OK", danger = false, checkbox }) {
+export function confirmDialog({ title, text, ok = t("OK"), danger = false, checkbox }) {
   return new Promise((resolve) => {
     const wrap = document.createElement("div");
     wrap.innerHTML = `
@@ -158,7 +170,7 @@ export function confirmDialog({ title, text, ok = "OK", danger = false, checkbox
         ${text ? `<p>${esc(text)}</p>` : ""}
         ${checkbox ? `<label class="kb-check"><input type="checkbox" data-c>${esc(checkbox)}</label>` : ""}
         <div class="kb-actions">
-          <button class="kb-btn" data-no>Cancel</button>
+          <button class="kb-btn" data-no>${t("Cancel")}</button>
           <button class="kb-btn ${danger ? "is-danger" : "is-primary"}" data-yes>${esc(ok)}</button>
         </div>
       </div>`;
@@ -184,7 +196,7 @@ export function confirmDialog({ title, text, ok = "OK", danger = false, checkbox
 }
 
 // Input with its own dialog instead of prompt(). Returns the text or null.
-export function promptDialog({ title, label, value = "", ok = "OK" }) {
+export function promptDialog({ title, label, value = "", ok = t("OK") }) {
   return new Promise((resolve) => {
     const wrap = document.createElement("div");
     wrap.innerHTML = `
@@ -193,7 +205,7 @@ export function promptDialog({ title, label, value = "", ok = "OK" }) {
         <h2>${esc(title)}</h2>
         <label class="kb-form-row"><span class="kb-dialog-label">${esc(label || "")}</span><input class="kb-field kb-dialog-input" value="${esc(value)}" required></label>
         <div class="kb-actions">
-          <button type="button" class="kb-btn" data-no>Cancel</button>
+          <button type="button" class="kb-btn" data-no>${t("Cancel")}</button>
           <button type="submit" class="kb-btn is-primary">${esc(ok)}</button>
         </div>
       </form>`;
@@ -228,7 +240,7 @@ export function openDrawer({ title, body, foot, onClose }) {
   wrap.innerHTML = `
     <div class="kb-scrim"></div>
     <aside class="kb-drawer" role="dialog" aria-modal="true" aria-label="${esc(title)}">
-      <div class="kb-drawer-head"><h2>${esc(title)}</h2><button class="kb-btn is-icon is-ghost" data-close aria-label="Close">${icon("close")}</button></div>
+      <div class="kb-drawer-head"><h2>${esc(title)}</h2><button class="kb-btn is-icon is-ghost" data-close aria-label="${t("Close")}">${icon("close")}</button></div>
       <div class="kb-drawer-body">${body || ""}</div>
       ${foot ? `<div class="kb-drawer-foot">${foot}</div>` : ""}
     </aside>`;
@@ -250,12 +262,52 @@ export function openDrawer({ title, body, foot, onClose }) {
   return { el: wrap.querySelector(".kb-drawer"), close };
 }
 
+// Little particles flying out of an element (O counter drops, favorite hearts). kind: "drop" | "heart"
+export function burst(el, kind = "drop", count = 11) {
+  if (!el || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const r = el.getBoundingClientRect();
+  let cx = r.left + r.width / 2;
+  let cy = r.top + r.height / 2;
+  // Button hidden (e.g. the info panel is tucked away in fullscreen, key O): from the middle of the screen
+  if (cx < 0 || cx > innerWidth || cy < 0 || cy > innerHeight || !r.width) {
+    cx = innerWidth / 2;
+    cy = innerHeight / 2;
+  }
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement("i");
+    p.className = "kb-particle is-" + kind;
+    const size = kind === "heart" ? 9 + Math.random() * 7 : 4 + Math.random() * 5;
+    p.style.cssText = `left:${cx}px;top:${cy}px;width:${size}px;height:${size}px`;
+    (document.fullscreenElement || document.body).appendChild(p); // in fullscreen only that element is visible
+    // Mostly upwards, spread to the sides; drops fall a little at the end
+    const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * (kind === "heart" ? 0.9 : 1.5);
+    const d = (kind === "heart" ? 34 : 26) + Math.random() * 34;
+    const x = Math.cos(a) * d;
+    const y = Math.sin(a) * d;
+    const rot = kind === "drop" ? (Math.atan2(y, x) * 180) / Math.PI + 225 : (Math.random() - 0.5) * 50;
+    p.animate(
+      [
+        { transform: `translate(-50%, -50%) rotate(${rot}deg) scale(.3)`, opacity: 1 },
+        { transform: `translate(calc(-50% + ${x * 0.75}px), calc(-50% + ${y * 0.75}px)) rotate(${rot}deg) scale(1)`, opacity: 1, offset: 0.55 },
+        { transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y + (kind === "drop" ? 14 : -12)}px)) rotate(${rot}deg) scale(.6)`, opacity: 0 },
+      ],
+      { duration: 650 + Math.random() * 350, easing: "cubic-bezier(.2,.8,.3,1)", delay: Math.random() * 60 }
+    ).onfinish = () => p.remove();
+  }
+}
+
+// A quick "boing" on a button
+export function pop(el, scale = 1.25) {
+  if (!el || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  el.animate([{ transform: "scale(1)" }, { transform: `scale(${scale})` }, { transform: "scale(.94)" }, { transform: "scale(1)" }], { duration: 420, easing: "cubic-bezier(.3,1.6,.5,1)" });
+}
+
 export function starsHtml(rating100, interactive) {
   const n = Math.round((rating100 || 0) / 20);
   return (
-    `<span class="kb-stars"${interactive ? ' role="group" aria-label="Rating"' : ""}>` +
+    `<span class="kb-stars"${interactive ? ` role="group" aria-label="${t("Rating")}"` : ""}>` +
     [1, 2, 3, 4, 5]
-      .map((i) => (interactive ? `<button type="button" data-star="${i}" class="${i <= n ? "is-on" : ""}" aria-label="${i} stars">★</button>` : `<span class="${i <= n ? "is-on" : ""}">★</span>`))
+      .map((i) => (interactive ? `<button type="button" data-star="${i}" class="${i <= n ? "is-on" : ""}" aria-label="${t("{n} stars", { n: i })}">★</button>` : `<span class="${i <= n ? "is-on" : ""}">★</span>`))
       .join("") +
     "</span>"
   );

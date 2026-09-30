@@ -7,13 +7,30 @@
 import { esc, icon, toast, errorToast, fmtDuration, fmtBytes, fmtNum, store } from "../ui.js";
 import * as lib from "../library.js";
 import { fixWebmDuration } from "../webmfix.js";
-import { analyzeSong, rescale, shift } from "../beats.js";
+import { analyzeSong, analyzeBuffer, sliceBuffer, rescale, shift } from "../beats.js";
 import { scanPmv } from "../pmvscan.js";
 import { analyze, spotScore, matchDist } from "../pmvsmart.js";
 import { folderPicker } from "./folderpick.js";
 import { LAYOUTS, slotsFor, aspectOfGroup, Compositor } from "../pmvfx.js";
 
+// "1:23", "1:02:03", "83" → seconds; "" → 0
+function parseTime(v) {
+  v = String(v || "").trim().replace(",", ".");
+  if (!v) return 0;
+  const parts = v.split(":").map(Number);
+  if (parts.some((n) => !Number.isFinite(n) || n < 0)) return NaN;
+  return parts.reduce((a, n) => a * 60 + n, 0);
+}
+function fmtTime(sec) {
+  sec = Math.max(0, Math.round(sec || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const x = String(sec % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${x}` : `${m}:${x}`;
+}
+
 const DEFAULTS = {
+  glass: true, // liquid glass look (switch at the top right)
   mode: "song", // song = your own song, tpl = use a PMV as template
   source: "scene", // scene = videos, image = images, both
   folders: [], // [{ id, path }] – empty = all folders
@@ -134,12 +151,22 @@ export function render(main) {
   let song = null; // beat detection result + name
   let run = null; // running generator
   let alive = true;
+  // Liquid glass: switch at the top right, on by default
+  const setGlass = () => document.documentElement.classList.toggle("kb-glass", S.glass !== false);
+  setGlass();
+  main.addEventListener("change", (e) => {
+    if (!e.target.matches("[data-pglass]")) return;
+    S.glass = e.target.checked;
+    save();
+    setGlass();
+  });
 
   main.innerHTML = `
     <header class="kb-head"><div class="kb-head-title">
       <h1 class="kb-h1">PMV Generator</h1>
       <p class="kb-sub">Pick a song and a folder of clips – on every beat it cuts to the next one. Live, and optionally recorded as a video. Everything runs in your browser: your files are never uploaded.</p>
-    </div></header>
+    </div>
+    <div class="kb-head-tools"><label class="kb-theme-inline"><span class="kb-switch"><input type="checkbox" data-pglass${S.glass !== false ? " checked" : ""}><i></i></span>Liquid glass</label></div></header>
     <div class="kb-pmvg">
       <div class="kb-pmvg-main">
       <section class="kb-card kb-pmvg-song">
@@ -169,8 +196,8 @@ export function render(main) {
         </div>
         <div data-songpane>
         <label class="kb-pmvg-drop" data-drop>
-          <input type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac,.opus" data-file hidden>
-          ${icon("music")}<b>Drop a song here</b><small>or click · MP3, M4A, WAV, OGG, FLAC</small>
+          <input type="file" accept="audio/*,video/*,.mp3,.m4a,.wav,.ogg,.flac,.opus,.mp4,.webm,.mov,.m4v" data-file hidden>
+          ${icon("music")}<b>Drop a song here</b><small>or click · MP3, M4A, WAV, OGG, FLAC – or a video, then its music is used</small>
         </label>
         <div data-songinfo hidden>
           <div class="kb-pmvg-songhead"><b data-songname></b><span data-bpm></span></div>
@@ -182,6 +209,14 @@ export function render(main) {
             <button class="kb-btn is-ghost" data-nudge="0.02" title="Cuts 20 ms later">Later</button>
             <span class="kb-spacer"></span>
             <button class="kb-btn is-ghost" data-other>Other song</button>
+          </div>
+          <div class="kb-pmvg-trim">
+            <span>Only use</span>
+            <input class="kb-field" data-tfrom value="0:00" aria-label="From">
+            <span>–</span>
+            <input class="kb-field" data-tto aria-label="To">
+            <button class="kb-btn" type="button" data-trim>Cut</button>
+            <button class="kb-btn is-ghost" type="button" data-untrim hidden>Whole song again</button>
           </div>
         </div>
         </div>
@@ -581,13 +616,16 @@ export function render(main) {
   drop.addEventListener("drop", (e) => {
     e.preventDefault();
     drop.classList.remove("is-over");
-    const f = [...e.dataTransfer.files].find((x) => x.type.startsWith("audio/") || /\.(mp3|m4a|wav|ogg|flac|opus|aac)$/i.test(x.name));
+    const f = [...e.dataTransfer.files].find((x) => /^(audio|video)\//.test(x.type) || /\.(mp3|m4a|wav|ogg|flac|opus|aac|mp4|webm|mov|m4v)$/i.test(x.name));
     if (f) loadSong(f);
-    else toast("That's not an audio file", "error");
+    else toast("That's not an audio or video file", "error");
   });
   $("[data-other]").onclick = () => file.click();
 
+  let songFull = null; // the whole decoded song, so "Cut" can be changed again
   async function loadSong(f) {
+    // A video file is decoded completely in the browser – beyond ~1.5 GB that runs out of memory
+    if (/^video\//.test(f.type) && f.size > 1.5e9) return toast("This video is too big to read in the browser – cut the part with the song out first", "error");
     drop.classList.add("is-busy");
     drop.querySelector("b").textContent = "Detecting beats …";
     try {
@@ -595,9 +633,13 @@ export function render(main) {
       if (!alive) return;
       if (r.beats.length < 8) throw new Error("Too few beats detected – is this a song with a rhythm?");
       song = Object.assign(r, { name: f.name.replace(/\.[^.]+$/, "") });
+      songFull = { buffer: r.buffer, name: song.name };
+      $("[data-tfrom]").value = "0:00";
+      $("[data-tto]").value = fmtTime(r.duration);
+      $("[data-untrim]").hidden = true;
       paintSong();
     } catch (err) {
-      errorToast(err.name === "EncodingError" ? new Error("The browser can't read this audio file") : err, "Song");
+      errorToast(err.name === "EncodingError" ? new Error("The browser can't read the sound of this file") : err, "Song");
     } finally {
       drop.classList.remove("is-busy");
       drop.querySelector("b").textContent = "Drop a song here";
@@ -613,6 +655,33 @@ export function render(main) {
     drawWave($("[data-wave]"), song);
     paintStart();
   }
+  // Only a part of the song: cut the decoded sound and detect the beats again
+  $("[data-trim]").onclick = async () => {
+    if (!songFull) return;
+    const full = songFull.buffer.duration;
+    const a = parseTime($("[data-tfrom]").value);
+    const b = parseTime($("[data-tto]").value) || full;
+    if (!(a >= 0) || !(b > a) || a >= full) return toast("From/to don't fit – e.g. 0:45 to 3:30", "error");
+    try {
+      const r = await analyzeBuffer(sliceBuffer(songFull.buffer, a, Math.min(b, full)));
+      if (r.beats.length < 8) throw new Error("Too few beats in this part");
+      song = Object.assign(r, { name: songFull.name });
+      $("[data-untrim]").hidden = false;
+      paintSong();
+    } catch (err) {
+      errorToast(err, "Song");
+    }
+  };
+  $("[data-untrim]").onclick = async () => {
+    if (!songFull) return;
+    const r = await analyzeBuffer(songFull.buffer);
+    song = Object.assign(r, { name: songFull.name });
+    $("[data-tfrom]").value = "0:00";
+    $("[data-tto]").value = fmtTime(r.duration);
+    $("[data-untrim]").hidden = true;
+    paintSong();
+  };
+
   main.querySelectorAll("[data-tempo]").forEach((b) => (b.onclick = () => song && ((song = Object.assign(rescale(song, Number(b.dataset.tempo)), { name: song.name })), paintSong())));
   main.querySelectorAll("[data-nudge]").forEach((b) => (b.onclick = () => song && ((song = Object.assign(shift(song, Number(b.dataset.nudge)), { name: song.name })), paintSong())));
 

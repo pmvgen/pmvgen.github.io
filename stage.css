@@ -32,7 +32,7 @@
   align-items: center;
   gap: 8px;
   padding: 12px 14px 30px;
-  background: linear-gradient(rgba(15, 5, 13, .85), transparent);
+  background: linear-gradient(color-mix(in srgb, color-mix(in srgb, var(--base), #000 45%) 85%, transparent), transparent);
   transition: opacity .3s ease;
 }
 .kb-topbar-title { flex: 1; min-width: 0; overflow: hidden; font: 700 22px/1.2 var(--f-display); font-stretch: 85%; text-overflow: ellipsis; white-space: nowrap; }
@@ -41,7 +41,7 @@
 .kb-stage .kb-btn.is-ghost:hover { background: rgba(251, 239, 244, .1); }
 .kb-stage .kb-btn.kb-toggle.is-on { color: var(--pink); background: transparent; border-color: transparent; }
 .kb-stage .kb-btn.kb-toggle.is-on:hover { background: rgba(251, 239, 244, .1); }
-.kb-speed { height: 32px; width: auto; padding-right: 26px; background-color: rgba(15, 5, 13, .6); }
+.kb-speed { height: 32px; width: auto; padding-right: 26px; background-color: color-mix(in srgb, color-mix(in srgb, var(--base), #000 45%) 60%, transparent); }
 
 .kb-bigplay {
   position: absolute;
@@ -75,7 +75,7 @@
   transform: translateX(-50%);
   box-shadow: 0 12px 30px rgba(0, 0, 0, .5);
 }
-.kb-resume-hint .kb-btn { height: 30px; color: var(--ink); background: transparent; border-color: rgba(35, 15, 31, .3); border-radius: 16px; }
+.kb-resume-hint .kb-btn { height: 30px; color: var(--ink); background: transparent; border-color: color-mix(in srgb, var(--bg) 30%, transparent); border-radius: 16px; }
 .kb-resume-hint .kb-btn:hover { color: var(--paper); background: var(--ink); }
 
 .kb-controls {
@@ -85,13 +85,28 @@
   bottom: 0;
   z-index: 3;
   padding: 40px 16px 12px;
-  background: linear-gradient(transparent, rgba(15, 5, 13, .92));
+  background: linear-gradient(transparent, color-mix(in srgb, color-mix(in srgb, var(--base), #000 45%) 92%, transparent));
   transition: opacity .3s ease;
 }
 .kb-ctrl-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .kb-playbtn .kb-ic { width: 22px; height: 22px; }
 .kb-time { margin-left: 8px; color: var(--text-2); font: 500 14px/1 var(--f-label); font-variant-numeric: tabular-nums; }
 .kb-vol { width: 90px; accent-color: var(--pink); }
+.kb-pmenu-wrap { display: inline-flex; }
+.kb-player video::-webkit-media-text-track-container { transform: translateY(-80px); transition: transform .25s ease; }
+.kb-player.is-idle video::-webkit-media-text-track-container { transform: none; }
+/* anchored to the control bar (it wraps on narrow screens – the button can be anywhere) */
+.kb-pmenu { position: absolute; right: 12px; bottom: calc(100% + 6px); z-index: 30; width: 230px; max-height: min(78vh, 560px); overflow-y: auto; padding: 6px; border: 1px solid var(--bg-3); border-radius: 6px; background: color-mix(in srgb, var(--base) 96%, transparent); box-shadow: 0 12px 30px rgba(0, 0, 0, .5); }
+.kb-pmenu[hidden] { display: none; }
+.kb-pmenu-sec + .kb-pmenu-sec { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.kb-pmenu-sec > b { display: block; padding: 4px 8px; color: var(--faint); font: 600 11px/1.2 var(--f-label); letter-spacing: .08em; text-transform: uppercase; }
+.kb-pmenu-opt { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; border: 0; border-radius: 4px; color: var(--text); font: 500 13.5px/1.2 var(--f-label); text-align: left; background: transparent; cursor: pointer; }
+.kb-pmenu-opt:hover { background: rgba(251, 239, 244, .08); }
+.kb-pmenu-opt.is-on { color: var(--pink); }
+.kb-pmenu-opt .kb-ic, .kb-pmenu-opt i { flex: none; width: 14px; height: 14px; }
+.kb-pmenu-speeds { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 6px 4px; }
+.kb-pmenu-speeds .kb-chip { cursor: pointer; }
+.kb-pmenu-speeds .kb-chip.is-on { color: var(--ink); background: var(--pink); }
 
 .kb-timeline { position: relative; height: 20px; margin-bottom: 6px; cursor: pointer; touch-action: none; }
 .kb-timeline::before, .kb-tl-buf, .kb-tl-played {
@@ -135,7 +150,7 @@
 .kb-tl-peek span { padding: 2px 7px; border-radius: 3px; color: var(--ink); font: 600 12px/1.3 var(--f-label); background: var(--paper); }
 
 /* Image viewer */
-.kb-canvas { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; touch-action: none; }
+.kb-canvas { position: absolute; inset: 0; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; overflow: hidden; touch-action: none; } /* one cell the size of the screen – so max-width/height 100 % mean the screen, not the picture */
 .kb-img { max-width: 100%; max-height: 100%; object-fit: contain; transform-origin: center; transition: transform .12s ease-out; user-select: none; }
 .kb-stage.is-zoomed .kb-canvas { cursor: grab; }
 .kb-stage.is-zoomed .kb-canvas:active { cursor: grabbing; }
@@ -150,7 +165,7 @@
   border: 0;
   border-radius: 50%;
   color: var(--text);
-  background: rgba(15, 5, 13, .55);
+  background: color-mix(in srgb, color-mix(in srgb, var(--base), #000 45%) 55%, transparent);
   transform: translateY(-50%);
   transition: opacity .3s ease, background .2s ease;
 }
@@ -207,6 +222,23 @@
   text-align: left;
   background: none;
 }
+/* Foldable sections (queue, up next, similar): open by default, chevron on the right */
+.kb-upsec summary { display: flex; align-items: center; gap: 10px; list-style: none; cursor: pointer; }
+.kb-upsec summary::-webkit-details-marker { display: none; }
+.kb-upsec summary h3 { flex: 1; }
+.kb-upsec summary::after { content: ""; flex: none; width: 8px; height: 8px; margin: 0 6px 4px 0; border-right: 2px solid var(--faint); border-bottom: 2px solid var(--faint); transform: rotate(45deg); transition: transform .2s; }
+.kb-upsec:not([open]) summary::after { transform: rotate(-45deg); margin-bottom: 0; }
+.kb-upsec summary:hover h3, .kb-upsec summary:hover::after { color: var(--pink); border-color: var(--pink); }
+.kb-upsec:not([open]) summary h3 { margin-bottom: 6px; }
+.kb-upsec-n { margin-left: 8px; color: var(--faint); font: 500 13px/1 var(--f-label); }
+.kb-qrow { display: flex; align-items: center; gap: 2px; }
+.kb-qrow .kb-upnext-item { flex: 1; min-width: 0; }
+.kb-qrow.is-now .kb-upnext-item { background: var(--bg-2); box-shadow: inset 3px 0 0 var(--pink); }
+.kb-qdel { flex: none; opacity: .35; }
+.kb-qrow:hover .kb-qdel, .kb-qdel:focus-visible { opacity: 1; }
+.kb-qdel:hover { color: var(--danger); }
+.kb-qall { display: inline-block; margin-top: 8px; color: var(--faint); font: 500 13px/1 var(--f-label); text-decoration: underline; }
+.kb-qall:hover { color: var(--pink); }
 .kb-upnext-item img { flex: none; width: 88px; height: 52px; object-fit: cover; border-radius: 3px; background: var(--base); }
 .kb-upnext-item span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .kb-upnext-item:hover { background: var(--bg-2); }
@@ -216,10 +248,43 @@
 .kb-similar .kb-upnext-item small { overflow: hidden; color: var(--faint); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
 
 @media (max-width: 860px) {
-  .kb-stage.has-panel { grid-template-columns: minmax(0, 1fr); grid-template-rows: 58vh minmax(0, 1fr); }
   .kb-vol, .kb-speed { display: none; }
   .kb-toggle span { display: none; }
 }
+/* Phones upright: picture on top, info bar below. The player's picture area is exactly as tall as
+   the video (--ar = width/height, set by the player) – no big black bars, more room for the info. */
+/* The whole stage scrolls as one page: the picture scrolls away upwards and the info bar (details, queue,
+   up next, similar) gets the full screen – instead of a small box of its own under a pinned picture. */
+@media (max-width: 860px) and (orientation: portrait) {
+  .kb-stage.has-panel { display: block; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  .kb-stage.has-panel .kb-screen { height: 58vh; }
+  .kb-stage.kb-player.has-panel .kb-screen { height: min(calc(100vw / var(--ar, 1.7778)), 65vh); }
+  .kb-stage.has-panel .kb-side { overflow: visible; min-height: 0; border-left: 0; border-top: 1px solid var(--bg-3); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  /* Liquid glass clips the stage for the video glow – here it has to scroll all the same */
+  html.kb-glass .kb-stage.kb-player.has-panel { overflow-x: hidden; overflow-y: auto; }
+  html.kb-glass .kb-stage.has-panel .kb-amb { position: fixed; inset: 0; width: 100%; height: 100%; }
+}
+/* Phones: one compact row of controls instead of two (they covered most of a 16:9 video).
+   The mute button goes – phones have volume keys. */
+@media (max-width: 560px) {
+  .kb-player .kb-controls { padding: 18px 8px 6px; }
+  .kb-player .kb-timeline { margin-bottom: 2px; }
+  .kb-player .kb-ctrl-row { flex-wrap: nowrap; gap: 0; }
+  .kb-player .kb-ctrl-row .kb-btn.is-icon, .kb-player .kb-ctrl-row .kb-toggle { flex: none; width: 34px; height: 34px; min-width: 0; padding: 0; justify-content: center; }
+  .kb-player .kb-ctrl-row .kb-spacer { min-width: 4px; }
+  .kb-player .kb-time { margin-left: 4px; font-size: 12.5px; white-space: nowrap; }
+  .kb-player [data-mute] { display: none; }
+}
+@media (max-width: 380px) {
+  .kb-player .kb-ctrl-row .kb-btn.is-icon, .kb-player .kb-ctrl-row .kb-toggle { width: 30px; }
+}
+/* Fullscreen: only the picture – the info bar steps aside */
+.kb-stage:fullscreen, .kb-stage.has-panel:fullscreen { display: grid; overflow: hidden; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.kb-stage.kb-player.has-panel:fullscreen .kb-screen, .kb-stage.has-panel:fullscreen .kb-screen { height: auto; }
+.kb-stage:fullscreen .kb-side { position: absolute; top: 0; right: 0; bottom: var(--ctrl-h, 0); z-index: 6; display: flex; width: min(400px, 90vw); border-left: 1px solid var(--bg-3); box-shadow: -24px 0 48px rgba(0, 0, 0, .5); transform: translateX(105%); transition: transform .28s var(--ease); }
+.kb-stage.is-peek:fullscreen .kb-side { transform: none; }
+.kb-vr { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.kb-vr:active { cursor: grabbing; }
 
 /* ==========================================================================
    PMV Generator
@@ -302,6 +367,30 @@
   .kb-pmvg-secsub { display: none; }
   .kb-pmvg-sectitle { flex: 1; }
 }
+/* RedGifs block in the clips step */
+.kb-pmvg-rg { display: flex; flex-direction: column; gap: 10px; }
+.kb-pmvg-rg > .kb-pmvg-range { max-width: 420px; }
+.kb-pmvg-rgbox { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--bg-3); border-radius: 6px; background: var(--base); }
+.kb-pmvg-rgbox[hidden] { display: none; }
+.kb-chip.kb-rg-niche { box-shadow: inset 3px 0 0 var(--pink); }
+.kb-chip.kb-rg-tag { box-shadow: inset 3px 0 0 var(--violet); }
+.kb-chip.kb-rg-user { box-shadow: inset 3px 0 0 var(--shine); }
+.kb-pmvg-rgsearch { position: relative; }
+.kb-pmvg-rgsearch .kb-field { width: 100%; }
+.kb-pmvg-rgsug { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20; display: flex; flex-direction: column; max-height: 340px; overflow-y: auto; padding: 6px; border: 1px solid var(--bg-3); border-radius: 6px; background: var(--bg-2); box-shadow: 0 12px 30px rgba(0, 0, 0, .45); }
+.kb-pmvg-rgsug[hidden] { display: none; }
+.kb-pmvg-rggroup { padding: 6px 8px 2px; color: var(--faint); font: 600 11.5px/1.2 var(--f-label); text-transform: uppercase; letter-spacing: .05em; }
+.kb-pmvg-rgopt { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 10px; border: 0; border-left: 3px solid transparent; border-radius: 4px; color: var(--text); text-align: left; background: none; cursor: pointer; }
+.kb-pmvg-rgopt:hover, .kb-pmvg-rgopt:focus-visible { background: var(--bg-3); }
+.kb-pmvg-rgopt.kb-rg-niche { border-left-color: var(--pink); }
+.kb-pmvg-rgopt.kb-rg-tag { border-left-color: var(--violet); }
+.kb-pmvg-rgopt.kb-rg-user { border-left-color: var(--shine); }
+.kb-pmvg-rgopt b { font: 600 14px/1.3 var(--f-text); }
+.kb-pmvg-rgopt small { flex: none; color: var(--faint); font-size: 12px; }
+.kb-pmvg-sel { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); font: 500 13px/1 var(--f-label); }
+.kb-pmvg-rgdir { flex: 1 1 260px; min-width: 0; }
+.kb-pmvg-hudsave { gap: 6px; }
+
 .kb-pmvg-pane { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .kb-pmvg-pane[hidden] { display: none; }
 .kb-pmvg-pane > .kb-pmvg-opts, .kb-pmvg-pane > .kb-field, .kb-pmvg-pane > .kb-pmvg-group, .kb-pmvg-pane > .kb-chips { align-self: stretch; }
@@ -400,7 +489,7 @@
   font: 500 13px/1 var(--f-label);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  background: rgba(35, 15, 31, .85);
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
   transform: translateX(-50%);
   transition: opacity .4s ease;
 }
@@ -460,3 +549,20 @@
 .kb-pmvg-legend .kb-chip { box-shadow: none; background: var(--base); }
 .kb-pmvg-sw { width: 10px; height: 10px; border-radius: 2px; }
 .kb-pmvg .is-dim { opacity: .4; pointer-events: none; }
+
+/* PMV Generator: music from a video, cutting the song */
+.kb-pmvg-fromvid { margin-top: 12px; border: 1px solid var(--bg-3); border-radius: 6px; background: var(--base); }
+.kb-pmvg-fromvid > summary { display: flex; align-items: center; gap: 8px; padding: 11px 14px; color: var(--text); font: 600 14px/1.2 var(--f-label); cursor: pointer; list-style: none; }
+.kb-pmvg-fromvid > summary::-webkit-details-marker { display: none; }
+.kb-pmvg-fromvid > summary::after { content: "▾"; margin-left: auto; color: var(--faint); transition: transform .2s; }
+.kb-pmvg-fromvid[open] > summary::after { transform: rotate(180deg); }
+.kb-pmvg-fromvid > summary .kb-ic { width: 18px; height: 18px; color: var(--pink); }
+.kb-pmvg-fromvid > summary:hover { color: var(--pink); }
+.kb-pmvg-fromvid[open] { padding-bottom: 14px; }
+.kb-pmvg-fromvid > :not(summary) { margin-left: 14px; margin-right: 14px; }
+.kb-pmvg-vpick { display: flex; flex-direction: column; gap: 12px; }
+.kb-pmvg-vrange, .kb-pmvg-trim { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; color: var(--text-2); font: 500 13.5px/1.2 var(--f-label); }
+.kb-pmvg-vrange label { display: inline-flex; align-items: center; gap: 8px; }
+.kb-pmvg-vrange .kb-field, .kb-pmvg-trim .kb-field { width: 86px; text-align: center; font-variant-numeric: tabular-nums; }
+.kb-pmvg-trim { margin-top: 10px; }
+html.kb-glass .kb-pmvg-fromvid { border-color: var(--glass-edge); background: var(--glass-shine), var(--glass); }
