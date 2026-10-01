@@ -388,6 +388,8 @@ a.kb-chip:hover, button.kb-chip:hover { background: rgba(180, 140, 255, .28); }
 .kb-piece > img.is-loaded { opacity: 1; }
 .kb-piece > video { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
 .kb-piece.is-previewing > video { opacity: 1; }
+.kb-piece > .kb-piece-anim { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+.kb-piece.is-previewing > .kb-piece-anim { opacity: 1; }
 .kb-piece:hover { box-shadow: 0 0 0 2px var(--pink); }
 .kb-piece:hover > img { transform: scale(1.03); }
 .kb-piece:focus-visible { outline: 2px solid var(--shine); outline-offset: 3px; }
@@ -635,6 +637,15 @@ a.kb-chip:hover, button.kb-chip:hover { background: rgba(180, 140, 255, .28); }
 .kb-stars button.is-on { color: var(--pink); }
 .kb-stars > span { color: var(--bg-3); line-height: 1; }
 .kb-stars > span.is-on { color: var(--pink); }
+/* a partly filled star (half, quarter, tenth – as chosen in Stash) */
+.kb-stars .is-part { color: transparent; background: linear-gradient(90deg, var(--pink) var(--fill, 50%), var(--bg-3) var(--fill, 50%)); -webkit-background-clip: text; background-clip: text; }
+/* hovering half/quarter/tenth stars: the value a click would set */
+.kb-stars.is-fine button.is-hov { opacity: 1; color: transparent; background: linear-gradient(90deg, var(--pink-2) var(--hfill, 0%), var(--bg-3) var(--hfill, 0%)); -webkit-background-clip: text; background-clip: text; text-shadow: none; transition-property: transform, opacity; }
+/* the 0–10 system */
+.kb-rate-dec { align-items: baseline; gap: 6px; }
+.kb-rate-dec b { color: var(--pink); font: 700 18px/1 var(--f-label); font-variant-numeric: tabular-nums; }
+.kb-rate-dec small { color: var(--faint); font: 500 12px/1 var(--f-label); }
+.kb-rate-dec input { width: 74px; padding: 4px 8px; font-variant-numeric: tabular-nums; }
 /* Hover: the star under the mouse and all before it light up, one after the other */
 .kb-stars button { transition: color .18s, transform .22s cubic-bezier(.3, 1.6, .5, 1), text-shadow .22s, opacity .18s; }
 .kb-stars button:nth-child(2) { transition-delay: 25ms; }
@@ -682,6 +693,8 @@ a.kb-chip:hover, button.kb-chip:hover { background: rgba(180, 140, 255, .28); }
 .kb-toast.is-error { color: var(--paper); background: #b3243e; }
 .kb-toast.is-error::after { border-top-color: #b3243e; }
 .kb-toast.is-ok { box-shadow: inset 5px 0 0 var(--ok), 0 12px 30px rgba(0, 0, 0, .45); }
+.kb-toast-act { margin-left: 12px; padding: 3px 12px; border: 2px solid var(--ink); border-radius: 999px; color: var(--paper); font: 700 13px/1.2 var(--f-label); background: var(--ink); cursor: pointer; }
+.kb-toast-act:hover { color: var(--ink); background: var(--pink-2); }
 .kb-toast.is-gone { opacity: 0; transform: translateY(6px); transition: opacity .35s ease, transform .35s ease; }
 @keyframes kb-toast-in { from { opacity: 0; transform: translateY(8px) scale(.96); } }
 

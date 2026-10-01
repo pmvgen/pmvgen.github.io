@@ -1,23 +1,30 @@
 // PMV Generator: image analysis for the smart crop and for picking good moments.
 // Measured on a tiny image (at most 64 px wide): skin share (simple RGB skin rule),
 // contrast (edges) and – with a second frame – motion.
+// analyzeAsync() lets the graphics card shrink the picture first (createImageBitmap): drawing a
+// 4K video frame straight into a readable canvas copies the whole frame back into memory and
+// blocks the page for 25–60 ms – shrunk first, it's about 1 ms.
 
 const MAX = 64;
 let canvas = null;
 let ctx = null;
 
-function grab(el, w, h) {
-  const sw = Math.max(8, Math.round(w >= h ? MAX : (MAX * w) / h));
-  const sh = Math.max(8, Math.round(w >= h ? (MAX * h) / w : MAX));
+const tiny = (w, h) => [Math.max(8, Math.round(w >= h ? MAX : (MAX * w) / h)), Math.max(8, Math.round(w >= h ? (MAX * h) / w : MAX))];
+function surface(sw, sh) {
   if (!canvas) {
     canvas = document.createElement("canvas");
     ctx = canvas.getContext("2d", { willReadFrequently: true });
   }
   canvas.width = sw;
   canvas.height = sh;
-  ctx.drawImage(el, 0, 0, sw, sh);
+  return ctx;
+}
+function grab(el, w, h) {
+  const [sw, sh] = tiny(w, h);
+  surface(sw, sh).drawImage(el, 0, 0, sw, sh);
   return { px: ctx.getImageData(0, 0, sw, sh).data, sw, sh };
 }
+let bitmapOk = typeof createImageBitmap === "function";
 
 const isSkin = (r, g, b) => r > 95 && g > 40 && b > 20 && r > g && r > b && r - g > 15 && Math.max(r, g, b) - Math.min(r, g, b) > 15;
 
@@ -31,7 +38,112 @@ export function analyze(el, w, h) {
   } catch (e) {
     return NEUTRAL; // e.g. foreign source (tainted canvas) – then simply the center
   }
-  const { px, sw, sh } = img;
+  return measure(img);
+}
+
+// Reading the shrunk picture back still waits for the graphics card (with playing 4K videos up to
+// ~50 ms) – a worker does that part, so the page keeps running. Built from this file's own
+// measure() (a blob, so no extra file to keep in step).
+let smart = null;
+function worker() {
+  if (smart !== null) return smart;
+  smart = false;
+  if (typeof Worker !== "function" || typeof OffscreenCanvas !== "function") return smart;
+  try {
+    const src = `const isSkin = ${isSkin};\nconst measure = ${measure};\nlet c = null, x = null;
+onmessage = (e) => {
+  const { id, bmp, sw, sh } = e.data;
+  let r = null;
+  try {
+    if (!c) { c = new OffscreenCanvas(sw, sh); x = c.getContext("2d", { willReadFrequently: true }); }
+    c.width = sw; c.height = sh;
+    x.drawImage(bmp, 0, 0);
+    r = measure({ px: x.getImageData(0, 0, sw, sh).data, sw, sh });
+  } catch (err) { /* e.g. a foreign picture */ }
+  bmp.close();
+  postMessage({ id, r });
+};`;
+    const w = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+    const waiting = new Map();
+    let seq = 0;
+    w.onmessage = (e) => {
+      const done = waiting.get(e.data.id);
+      waiting.delete(e.data.id);
+      if (done) done(e.data.r || NEUTRAL);
+    };
+    w.onerror = () => {
+      smart = false; // fall back to the page itself
+      waiting.forEach((done) => done(NEUTRAL));
+      waiting.clear();
+    };
+    smart = {
+      run: (bmp, sw, sh) =>
+        new Promise((done) => {
+          const id = ++seq;
+          waiting.set(id, done);
+          w.postMessage({ id, bmp, sw, sh }, [bmp]);
+        }),
+    };
+  } catch (e) {
+    smart = false;
+  }
+  return smart;
+}
+
+// The same without blocking; region = [x, y, w, h] of el (e.g. one picture of a sprite sheet)
+export async function analyzeAsync(el, w, h, region) {
+  const [rw, rh] = region ? [region[2], region[3]] : [w, h];
+  const [sw, sh] = tiny(rw, rh);
+  if (bitmapOk) {
+    try {
+      const opts = { resizeWidth: sw, resizeHeight: sh, resizeQuality: "low" };
+      const bmp = region ? await createImageBitmap(el, region[0], region[1], region[2], region[3], opts) : await createImageBitmap(el, opts);
+      const w = worker();
+      if (w) return await w.run(bmp, sw, sh);
+      surface(sw, sh).drawImage(bmp, 0, 0);
+      bmp.close();
+      return measure({ px: ctx.getImageData(0, 0, sw, sh).data, sw, sh });
+    } catch (e) {
+      if (e.name === "SecurityError") return NEUTRAL;
+      if (e.name === "TypeError" || e.name === "NotSupportedError") bitmapOk = false; // older browser – the old way
+      else return NEUTRAL; // e.g. no frame yet
+    }
+  }
+  try {
+    const x = surface(sw, sh);
+    if (region) x.drawImage(el, region[0], region[1], region[2], region[3], 0, 0, sw, sh);
+    else x.drawImage(el, 0, 0, sw, sh);
+    return measure({ px: x.getImageData(0, 0, sw, sh).data, sw, sh });
+  } catch (e) {
+    return NEUTRAL;
+  }
+}
+
+// Many small pictures of one image (a sprite sheet): drawn and read once, each rect measured from memory.
+// rects = [[x, y, w, h], …] in the image's pixels, all the same size
+export function analyzeTiles(img, rects) {
+  if (!rects.length) return [];
+  const [tw, th] = tiny(rects[0][2], rects[0][3]);
+  const k = tw / rects[0][2];
+  const W = Math.ceil(img.naturalWidth * k);
+  const H = Math.ceil(img.naturalHeight * k);
+  let all;
+  try {
+    surface(W, H).drawImage(img, 0, 0, W, H);
+    all = ctx.getImageData(0, 0, W, H).data;
+  } catch (e) {
+    return rects.map(() => NEUTRAL);
+  }
+  return rects.map(([x, y]) => {
+    const ox = Math.min(W - tw, Math.round(x * k));
+    const oy = Math.min(H - th, Math.round(y * k));
+    const px = new Uint8ClampedArray(tw * th * 4);
+    for (let row = 0; row < th; row++) px.set(all.subarray(((oy + row) * W + ox) * 4, ((oy + row) * W + ox + tw) * 4), row * tw * 4);
+    return measure({ px, sw: tw, sh: th });
+  });
+}
+
+function measure({ px, sw, sh }) {
   const gray = new Float32Array(sw * sh);
   let sr = 0;
   let sg = 0;

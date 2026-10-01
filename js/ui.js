@@ -9,6 +9,7 @@ export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 const ICONS = {
+  undo: '<path d="M9 7 4.5 11.5 9 16M5 11.5h9.5a5 5 0 0 1 0 10H11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
   home: '<path d="M4 11.5 12 5l8 6.5V20h-5.5v-5h-5v5H4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
   folder: '<path d="M3.5 7a1.5 1.5 0 0 1 1.5-1.5h4.3l2 2.2H19a1.5 1.5 0 0 1 1.5 1.5v8.3a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
   film: '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="1.5"/><path d="M8 5v14M16 5v14M3.5 9.5H8M3.5 14.5H8M16 9.5h4.5M16 14.5h4.5"/></g>',
@@ -19,6 +20,8 @@ const ICONS = {
   history: '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5"/><path d="M4 4v4.5h4.5M12 8v4.5l3 2"/></g>',
   search: '<g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/></g>',
   tasks: '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1.3 1.3L7 5M3.5 12l1.3 1.3L7 11M3.5 18l1.3 1.3L7 17"/></g>',
+  trophy: '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 4.5h9v5a4.5 4.5 0 0 1-9 0z"/><path d="M7.5 6.5H4.5a3 3 0 0 0 3.2 3.4M16.5 6.5h3a3 3 0 0 1-3.2 3.4M12 14v3.5M8.5 20h7M9.5 17.5h5"/></g>',
+  sliders: '<g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/></g>',
   gear: '<g fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M18 6l-1.6 1.6M7.6 16.4 6 18M18 18l-1.6-1.6M7.6 7.6 6 6" stroke-linecap="round"/></g>',
   plug: '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3.5v4M15 3.5v4M6.5 7.5h11V11a5.5 5.5 0 0 1-11 0zM12 16.5v4"/></g>',
   bolt: '<path d="M13 2.5 4.8 13.5H11L10 21.5l8.2-11H12z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
@@ -138,16 +141,28 @@ export const store = {
 
 // ---------- Messages ----------
 
-export function toast(msg, type) {
+// act = { label, run }: a button in the toast (e.g. Undo) – the toast then stays a little longer
+export function toast(msg, type, act) {
   const box = document.getElementById("toasts");
   const el = document.createElement("div");
   el.className = "kb-toast" + (type ? " is-" + type : "");
   el.textContent = msg;
+  if (act) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "kb-toast-act";
+    b.textContent = act.label;
+    b.onclick = () => {
+      el.remove();
+      act.run();
+    };
+    el.appendChild(b);
+  }
   box.appendChild(el);
   setTimeout(() => {
     el.classList.add("is-gone");
     setTimeout(() => el.remove(), 400);
-  }, type === "error" ? 6000 : 3200);
+  }, act ? 9000 : type === "error" ? 6000 : 3200);
 }
 
 export function errorToast(e, what) {
@@ -302,16 +317,100 @@ export function pop(el, scale = 1.25) {
   el.animate([{ transform: "scale(1)" }, { transform: `scale(${scale})` }, { transform: "scale(.94)" }, { transform: "scale(1)" }], { duration: 420, easing: "cubic-bezier(.3,1.6,.5,1)" });
 }
 
+// ---------- Rating: the system chosen in Stash (classic Stash → Settings → Interface → Editing) ----------
+// Stash keeps every rating as 1–100; it's shown as stars (whole, half, quarter or tenth) or as 0.0–10.0.
+let RS = (() => {
+  const v = store.get("ratingSystem", null);
+  return v && v.type ? v : { type: "stars", step: 1 };
+})();
+export const ratingSystem = () => RS;
+export function setRatingSystem(opts) {
+  const o = opts || {};
+  const next = { type: o.type === "decimal" ? "decimal" : "stars", step: { full: 1, half: 0.5, quarter: 0.25, tenth: 0.1 }[o.starPrecision] || 1 };
+  const changed = next.type !== RS.type || next.step !== RS.step;
+  RS = next;
+  store.set("ratingSystem", RS);
+  return changed;
+}
+const round = (v, step) => Math.round(Math.round(v / step) * step * 100) / 100;
+// rating100 → what's shown: stars 0–5 (in the chosen steps) or 0.0–10.0
+export const ratingValue = (r) => (!r ? 0 : RS.type === "decimal" ? Math.round(r) / 10 : round(r / 20, RS.step));
+const fmtVal = (v) => (RS.type === "decimal" ? v.toFixed(1) : String(v));
+// Short text: "★★★★", "★ 3.5" or "7.5"
+export function ratingText(r) {
+  if (!r) return "";
+  const v = ratingValue(r);
+  return RS.type === "decimal" ? fmtVal(v) : RS.step === 1 ? "★".repeat(v) : "★ " + fmtVal(v);
+}
+export const ratingToast = (r) => (r ? t("Rating: {r}", { r: RS.type === "decimal" ? fmtVal(ratingValue(r)) + " / 10" : ratingText(r) }) : t("Rating removed"));
+
 export function starsHtml(rating100, interactive) {
-  const n = Math.round((rating100 || 0) / 20);
+  if (RS.type === "decimal") {
+    const v = ratingValue(rating100);
+    return interactive
+      ? `<span class="kb-stars kb-rate-dec" role="group" aria-label="${t("Rating")}"><input class="kb-field" type="number" min="0" max="10" step="0.1" inputmode="decimal" data-ratedec value="${v ? v.toFixed(1) : ""}" placeholder="–" aria-label="${t("Rating")} (0–10)"><small>/ 10</small></span>`
+      : `<span class="kb-stars kb-rate-dec"><b>${v ? fmtVal(v) : "–"}</b><small>/ 10</small></span>`;
+  }
+  const v = ratingValue(rating100);
   return (
-    `<span class="kb-stars"${interactive ? ` role="group" aria-label="${t("Rating")}"` : ""}>` +
+    `<span class="kb-stars${RS.step < 1 ? " is-fine" : ""}"${interactive ? ` role="group" aria-label="${t("Rating")}"` : ""}>` +
     [1, 2, 3, 4, 5]
-      .map((i) => (interactive ? `<button type="button" data-star="${i}" class="${i <= n ? "is-on" : ""}" aria-label="${t("{n} stars", { n: i })}">★</button>` : `<span class="${i <= n ? "is-on" : ""}">★</span>`))
+      .map((i) => {
+        // a partly filled star (half, quarter, tenth)
+        const fill = Math.max(0, Math.min(1, v - (i - 1)));
+        const cls = fill >= 1 ? "is-on" : fill > 0 ? "is-part" : "";
+        const style = fill > 0 && fill < 1 ? ` style="--fill:${Math.round(fill * 100)}%"` : "";
+        return interactive ? `<button type="button" data-star="${i}" class="${cls}"${style} aria-label="${t("{n} stars", { n: i })}">★</button>` : `<span class="${cls}"${style}>★</span>`;
+      })
       .join("") +
     "</span>"
   );
 }
+// A click on the stars → the new rating100; null = removed (the same value again); undefined = not a star.
+// With half/quarter/tenth stars, where on the star you click counts.
+export function ratingClick(e, current100) {
+  const b = e.target.closest("[data-star]");
+  if (!b) return undefined;
+  const i = Number(b.dataset.star);
+  let v = i;
+  if (RS.step < 1) {
+    const r = b.getBoundingClientRect();
+    const frac = r.width ? Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) : 1;
+    v = round(i - 1 + Math.max(RS.step, Math.ceil(frac / RS.step - 1e-6) * RS.step), RS.step);
+  }
+  return ratingValue(current100) === v ? null : Math.round(v * 20);
+}
+// Half/quarter/tenth stars: hovering shows exactly what a click would set
+function starAt(e) {
+  const b = e.target.closest && e.target.closest(".kb-stars.is-fine [data-star]");
+  if (!b) return null;
+  const r = b.getBoundingClientRect();
+  const frac = r.width ? Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) : 1;
+  return { b, v: round(Number(b.dataset.star) - 1 + Math.max(RS.step, Math.ceil(frac / RS.step - 1e-6) * RS.step), RS.step) };
+}
+if (typeof document !== "undefined") {
+  document.addEventListener("mousemove", (e) => {
+    const h = starAt(e);
+    if (!h) return;
+    h.b.parentElement.querySelectorAll("[data-star]").forEach((s, i) => {
+      s.classList.add("is-hov");
+      s.style.setProperty("--hfill", Math.round(Math.max(0, Math.min(1, h.v - i)) * 100) + "%");
+    });
+  });
+  document.addEventListener("mouseout", (e) => {
+    const g = e.target.closest && e.target.closest(".kb-stars.is-fine");
+    if (g && !g.contains(e.relatedTarget)) g.querySelectorAll(".is-hov").forEach((s) => s.classList.remove("is-hov"));
+  });
+}
+// The decimal field → rating100 (empty or 0 = removed; undefined = not a number, leave it)
+export function ratingFromInput(el) {
+  if (el.validity && el.validity.badInput) return undefined;
+  const v = Math.max(0, Math.min(10, parseFloat(String(el.value).replace(",", ".")) || 0));
+  return v ? Math.max(1, Math.round(v * 10)) : null;
+}
+// "Rating from" filter: the steps of the chosen system → [value, label]; and the matching rating100 limit
+export const ratingFilterSteps = () => (RS.type === "decimal" ? [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [n, "≥ " + n]) : [1, 2, 3, 4, 5].map((n) => [n, "★".repeat(n)]));
+export const ratingFilterMin = (n) => (RS.type === "decimal" ? n * 10 : n * 20) - 1;
 
 // Debounce
 export function debounce(fn, ms) {

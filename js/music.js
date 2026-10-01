@@ -2,7 +2,7 @@
 // is analyzed only when it's about to play – the next one already while the current one runs.
 // A track is { name, sub?, load: () => Promise<song> } (song = analyzeSong() result + name).
 
-import { analyzeSong } from "./beats.js";
+import { analyzeFile } from "./beats.js";
 
 export const AUDIO_RE = /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|webm)$/i;
 
@@ -33,7 +33,7 @@ export function fileTrack(f) {
   return {
     name,
     load: async () => {
-      const r = await analyzeSong(await f.arrayBuffer());
+      const r = await analyzeFile(f); // long mixes too (read piece by piece)
       return Object.assign(r, { name });
     },
   };

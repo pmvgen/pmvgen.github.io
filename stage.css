@@ -103,6 +103,11 @@
 .kb-pmenu-opt { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; border: 0; border-radius: 4px; color: var(--text); font: 500 13.5px/1.2 var(--f-label); text-align: left; background: transparent; cursor: pointer; }
 .kb-pmenu-opt:hover { background: rgba(251, 239, 244, .08); }
 .kb-pmenu-opt.is-on { color: var(--pink); }
+.kb-pmenu-opt.is-disabled { color: var(--faint); cursor: default; }
+.kb-pmenu-opt.is-disabled:hover { background: transparent; }
+/* How it goes on: one button that cycles; "1" on the repeat icon = this video */
+.kb-pmode { position: relative; }
+.kb-pmode-one { position: absolute; left: 22px; top: 5px; font: 800 9px/1 var(--f-label); color: currentColor; }
 .kb-pmenu-opt .kb-ic, .kb-pmenu-opt i { flex: none; width: 14px; height: 14px; }
 .kb-pmenu-speeds { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 6px 4px; }
 .kb-pmenu-speeds .kb-chip { cursor: pointer; }
@@ -511,6 +516,23 @@
   .kb-pmvg-hud [data-h="cuts"], .kb-pmvg-hud [data-h="bpm"] { display: none; }
 }
 .kb-pmvg-stage:not(:hover) .kb-pmvg-hud { opacity: .15; }
+/* The bar goes away when the mouse rests (and for good with H); so does the cursor */
+.kb-pmvg-stage.is-idle { cursor: none; }
+.kb-pmvg-stage.is-idle .kb-pmvg-hud, .kb-pmvg-stage.is-nohud .kb-pmvg-hud { opacity: 0; pointer-events: none; }
+.kb-pmvg-stage.is-idle .kb-pmvg-bar, .kb-pmvg-stage.is-nohud .kb-pmvg-bar { opacity: 0; }
+.kb-pmvg-bar { transition: opacity .4s ease; }
+/* Clip info (I) */
+.kb-pmvg-info { position: absolute; left: 12px; bottom: 14px; display: grid; gap: 3px; max-width: min(640px, calc(100vw - 24px)); padding: 8px 10px; border: 1px solid var(--bg-3); border-radius: 4px; color: var(--text-2); font: 500 12.5px/1.4 var(--f-label); font-variant-numeric: tabular-nums; background: color-mix(in srgb, var(--bg) 85%, transparent); pointer-events: none; }
+.kb-pmvg-info > div { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.kb-pmvg-info b { display: inline-block; min-width: 14px; color: var(--pink); }
+.kb-pmvg-info small { color: var(--faint); }
+.kb-pmvg-info .is-bad { color: #ff8095; }
+.kb-pmvg-infohead { margin-top: 4px; color: var(--text); font-weight: 700; }
+/* Presets and the smaller filter rows */
+.kb-pmvg-presets { display: grid; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.kb-pmvg-presets .kb-pmvg-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.kb-pmvg-presets select { flex: 1; min-width: 0; }
+.kb-pmvg-small button { padding-inline: 10px; font-size: 12.5px; }
 .kb-pmvg-rec { padding: 2px 6px; border-radius: 3px; color: var(--paper); font-weight: 700; background: #d8243f; animation: kb-pmv-pulse 1.4s ease-in-out infinite; }
 .kb-pmvg-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(251, 239, 244, .12); }
 .kb-pmvg-bar i { display: block; height: 100%; width: 0; background: var(--pink); }
@@ -554,6 +576,11 @@
 .kb-pmvg-listinfo { margin-top: 10px; }
 .kb-pmvg-listinfo .kb-hint { margin: 0 0 4px; }
 .kb-pmvg-plex { padding: 2px 6px; border-radius: 3px; color: #1f1f1f; font-weight: 700; background: #e5a00d; }
+.kb-pmvg-live { padding: 2px 6px; border-radius: 3px; color: #0b0b0b; font-weight: 700; background: #1ed760; }
+.kb-pmvg-liveapp { display: grid; grid-template-columns: auto minmax(0, 220px); align-items: center; gap: 4px 10px; margin: 10px 0; }
+.kb-pmvg-liveapp .kb-lab-t { margin: 0; }
+.kb-pmvg-liveapp small { grid-column: 1 / -1; margin: 0; }
+[data-livepane] .kb-pmvg-np { margin-top: 4px; }
 .kb-pmvg-sync { display: inline-flex; align-items: center; gap: 2px; font-variant-numeric: tabular-nums; }
 .kb-pmvg-sync .kb-btn { min-width: 30px; padding-inline: 8px; }
 .kb-pmvg-sync [data-h="sync"] { min-width: 54px; text-align: center; }

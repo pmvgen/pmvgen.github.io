@@ -4,12 +4,12 @@
 // Optionally MediaRecorder records picture + song; the video can be downloaded.
 // Everything runs in the browser – the clips are local files and are never uploaded.
 
-import { esc, icon, toast, errorToast, fmtDuration, fmtBytes, fmtNum, store } from "../ui.js";
+import { esc, icon, toast, errorToast, fmtDuration, fmtBytes, fmtNum, store, promptDialog, confirmDialog } from "../ui.js";
 import * as lib from "../library.js";
 import { fixWebmDuration } from "../webmfix.js";
-import { analyzeSong, analyzeBuffer, sliceBuffer, rescale, shift } from "../beats.js";
+import { analyzeFile, analyzeBuffer, sliceBuffer, songFromFrames, rescale, shift } from "../beats.js";
 import { scanPmv } from "../pmvscan.js";
-import { analyze, spotScore, matchDist } from "../pmvsmart.js";
+import { analyzeAsync, spotScore, matchDist } from "../pmvsmart.js";
 import { folderPicker } from "./folderpick.js";
 import { LAYOUTS, slotsFor, aspectOfGroup, Compositor } from "../pmvfx.js";
 import { Playlist, fileTrack, filesFromDrop, isSongFile } from "../music.js";
@@ -383,7 +383,20 @@ export function render(main) {
         <h2><span class="kb-pmvg-no">4</span>Go</h2>
         <ul class="kb-pmvg-sum" data-sum></ul>
         <button class="kb-btn is-primary kb-pmvg-start" data-start disabled>${icon("bolt")}Pick a song first</button>
-        <p class="kb-hint">Keys while it runs: Space pause · F fullscreen · Esc stop</p>
+        <p class="kb-hint">Keys while it runs: Space pause · F fullscreen · H hide the bar · I clip info · Esc stop</p>
+        <div class="kb-pmvg-presets">
+          <span class="kb-lab-t">My settings</span>
+          <div class="kb-pmvg-row">
+            <select class="kb-field" data-mypreset aria-label="Saved settings"></select>
+            <button class="kb-btn" type="button" data-psave title="Save everything about clips, cutting, effects, look and sound under a name">Save …</button>
+          </div>
+          <div class="kb-pmvg-row">
+            <button class="kb-btn is-ghost" type="button" data-pdel>Delete</button>
+            <button class="kb-btn is-ghost" type="button" data-pexport title="As a file – to keep or to share">${icon("download")}Export</button>
+            <button class="kb-btn is-ghost" type="button" data-pimport>Import</button>
+            <input type="file" accept=".json,application/json" data-pfile hidden>
+          </div>
+        </div>
       </aside>
     </div>`;
   const $ = (s) => main.querySelector(s);
@@ -535,7 +548,13 @@ export function render(main) {
     paintSegs();
     if (c.dataset.t === "fx.text" && S.fx.text) $("[data-words]").focus();
   });
-  folderPicker($("[data-folders]"), {
+  const fresh = (q) => {
+    const old = $(q);
+    const el = old.cloneNode(false);
+    old.replaceWith(el);
+    return el;
+  };
+  const mountFolders = () => folderPicker(fresh("[data-folders]"), {
     selected: S.folders,
     onChange: (list) => {
       S.folders = list;
@@ -544,6 +563,7 @@ export function render(main) {
       updateCount();
     },
   });
+  mountFolders();
 
   // ---------- Your clips ----------
 
@@ -691,13 +711,16 @@ export function render(main) {
     // A video file is decoded completely in the browser – beyond ~1.5 GB that runs out of memory
     if (/^video\//.test(f.type) && f.size > 1.5e9) return toast("This video is too big to read in the browser – cut the part with the song out first", "error");
     drop.classList.add("is-busy");
-    drop.querySelector("b").textContent = "Detecting beats …";
+    const label = drop.querySelector("b");
+    label.textContent = "Detecting beats …";
     try {
-      const r = await analyzeSong(await f.arrayBuffer());
+      // Long mixes are read piece by piece – that takes a moment, so show how far it is
+      const r = await analyzeFile(f, (p) => (label.textContent = `Reading a long song … ${Math.round(p * 100)} %`));
       if (!alive) return;
       if (r.beats.length < 8) throw new Error("Too few beats detected – is this a song with a rhythm?");
+      if (songFull && songFull.media) URL.revokeObjectURL(songFull.media);
       song = Object.assign(r, { name: f.name.replace(/\.[^.]+$/, "") });
-      songFull = { buffer: r.buffer, name: song.name };
+      songFull = r.long ? { frames: r.frames, media: r.media, duration: r.duration, name: song.name } : { buffer: r.buffer, name: song.name };
       playlist = null;
       $("[data-tfrom]").value = "0:00";
       $("[data-tto]").value = fmtTime(r.duration);
@@ -727,12 +750,15 @@ export function render(main) {
   // Only a part of the song: cut the decoded sound and detect the beats again
   $("[data-trim]").onclick = async () => {
     if (!songFull) return;
-    const full = songFull.buffer.duration;
+    const full = songFull.buffer ? songFull.buffer.duration : songFull.duration;
     const a = parseTime($("[data-tfrom]").value);
     const b = parseTime($("[data-tto]").value) || full;
     if (!(a >= 0) || !(b > a) || a >= full) return toast("From/to don't fit – e.g. 0:45 to 3:30", "error");
     try {
-      const r = await analyzeBuffer(sliceBuffer(songFull.buffer, a, Math.min(b, full)));
+      // A long song: from its stored curves; it then plays from "from" to "to" in the file
+      const r = songFull.frames
+        ? Object.assign(songFromFrames(songFull.frames, a, Math.min(b, full)), { media: songFull.media, offset: a, end: Math.min(b, full) })
+        : await analyzeBuffer(sliceBuffer(songFull.buffer, a, Math.min(b, full)));
       if (r.beats.length < 8) throw new Error("Too few beats in this part");
       song = Object.assign(r, { name: songFull.name });
       $("[data-untrim]").hidden = false;
@@ -743,7 +769,7 @@ export function render(main) {
   };
   $("[data-untrim]").onclick = async () => {
     if (!songFull) return;
-    const r = await analyzeBuffer(songFull.buffer);
+    const r = songFull.frames ? Object.assign(songFromFrames(songFull.frames), { media: songFull.media }) : await analyzeBuffer(songFull.buffer);
     song = Object.assign(r, { name: songFull.name });
     $("[data-tfrom]").value = "0:00";
     $("[data-tto]").value = fmtTime(r.duration);
@@ -774,6 +800,116 @@ export function render(main) {
           : ok ? "Start" : "Pick a song first";
     b.innerHTML = `${icon("bolt")}${ok && !clips ? "Add clips first" : label}`;
   }
+
+  // ---------- My settings (presets) ----------
+  // Everything about clips, cutting, effects, look and sound – not the music source or the title.
+  // Kept in this browser; Export/Import moves them as a file.
+  const NOT_IN_PRESET = ["collapsed", "glass", "v", "mode", "title", "shuffle", "plexWhat", "plexList", "plexSync", "plexSyncs", "liveApp"];
+  const presets = () => store.get("presets", {});
+  function writePresets(all) {
+    store.set("presets", all);
+    if (JSON.stringify(store.get("presets", null)) !== JSON.stringify(all)) throw new Error("The browser didn't keep it (storage full or blocked) – use Export instead");
+  }
+  const snapshot = () => {
+    const o = JSON.parse(JSON.stringify(S));
+    NOT_IN_PRESET.forEach((k) => delete o[k]);
+    return o;
+  };
+  function paintPresets(sel) {
+    const all = presets();
+    const names = Object.keys(all).sort((a, b) => a.localeCompare(b));
+    const box = $("[data-mypreset]");
+    box.innerHTML = `<option value="">${names.length ? "Load saved settings …" : "Nothing saved yet"}</option>` + names.map((n) => `<option value="${esc(n)}"${n === sel ? " selected" : ""}>${esc(n)}</option>`).join("");
+    $("[data-pdel]").disabled = !sel;
+  }
+  function applyPreset(o) {
+    const keep = {};
+    NOT_IN_PRESET.forEach((k) => (keep[k] = S[k]));
+    const base = JSON.parse(JSON.stringify(DEFAULTS));
+    Object.assign(S, base, o, keep);
+    S.fx = Object.assign({}, DEFAULTS.fx, o.fx);
+    S.layouts = Object.assign({}, DEFAULTS.layouts, o.layouts);
+    // values this version doesn't know (older, edited or plugin files) → the default
+    if (!CUTS.some(([v]) => v === S.cut)) S.cut = DEFAULTS.cut;
+    if (!LOOKS.some(([v]) => v === S.look)) S.look = DEFAULTS.look;
+    if (!Object.values(S.layouts).some(Boolean)) S.layouts = Object.assign({}, DEFAULTS.layouts);
+    if (!Array.isArray(S.folders)) S.folders = [];
+    save();
+    // Everything on the page from S again
+    const words = $("[data-words]");
+    if (words) words.value = S.words || "";
+    mountFolders();
+    paintSegs();
+    paintSummary();
+    paintTip();
+    updateCount();
+    paintMode();
+  }
+  paintPresets("");
+  $("[data-mypreset]").addEventListener("change", (e) => {
+    const name = e.target.value;
+    $("[data-pdel]").disabled = !name;
+    if (!name) return;
+    applyPreset(presets()[name] || {});
+    toast(`Loaded: ${name}`, "ok");
+  });
+  $("[data-psave]").onclick = async () => {
+    const cur = $("[data-mypreset]").value;
+    const name = (await promptDialog({ title: "Save settings", label: "Clips, cutting, effects, look and sound – under this name (the same name replaces it)", value: cur, ok: "Save" })) || "";
+    if (!name.trim()) return;
+    try {
+      writePresets(Object.assign({}, presets(), { [name.trim()]: snapshot() }));
+      paintPresets(name.trim());
+      toast(`Saved: ${name.trim()}`, "ok");
+    } catch (err) {
+      errorToast(err, "Save");
+    }
+  };
+  $("[data-pdel]").onclick = async () => {
+    const name = $("[data-mypreset]").value;
+    if (!name || !(await confirmDialog({ title: `Delete “${name}”?`, text: "Only the saved settings – nothing else.", ok: "Delete", danger: true })).ok) return;
+    const all = Object.assign({}, presets());
+    delete all[name];
+    try {
+      writePresets(all);
+      paintPresets("");
+    } catch (err) {
+      errorToast(err, "Delete");
+    }
+  };
+  $("[data-pexport]").onclick = () => {
+    const name = $("[data-mypreset]").value || "PMV settings";
+    const blob = new Blob([JSON.stringify({ pmvGenerator: 1, name, settings: snapshot() }, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_") + ".pmvgen.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  };
+  $("[data-pimport]").onclick = () => $("[data-pfile]").click();
+  $("[data-pfile]").onchange = async (e) => {
+    const f = e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    try {
+      const d = JSON.parse(await f.text());
+      const o = d && d.settings && typeof d.settings === "object" ? d.settings : null;
+      if (!o) throw new Error("That's not a PMV Generator settings file");
+      const name = String(d.name || f.name.replace(/(\.pmvgen)?\.json$/i, "")).slice(0, 60) || "Imported";
+      applyPreset(o);
+      try {
+        writePresets(Object.assign({}, presets(), { [name]: o }));
+        paintPresets(name);
+        toast(`Imported and loaded: ${name}`, "ok");
+      } catch (err) {
+        toast(`Loaded: ${name} (couldn't keep it in the list: ${err.message || err})`, "error");
+      }
+    } catch (err) {
+      errorToast(err, "Import");
+    }
+  };
 
   // ---------- Plex ----------
 
@@ -1259,10 +1395,13 @@ class Generator {
               ? `<span class="kb-pmvg-sync" title="If the cuts come too early or too late: shift them ([ / ])"><button class="kb-btn is-ghost" data-act="sync-">−</button><span data-h="sync"></span><button class="kb-btn is-ghost" data-act="sync+">+</button><button class="kb-btn is-ghost" data-act="tap" title="Tap along to the beat you hear (T) – the sync sets itself">Tap</button></span>`
               : `<button class="kb-btn is-icon is-ghost" data-act="pause" title="Pause (Space)">${icon("pause")}</button>`
           }
+          <button class="kb-btn is-icon is-ghost" data-act="info" title="Which clips are on screen (I)">${icon("info")}</button>
+          <button class="kb-btn is-icon is-ghost" data-act="hidebar" title="Hide this bar (H) – H brings it back">${icon("close")}</button>
           <button class="kb-btn is-icon is-ghost" data-act="full" title="Fullscreen (F)">${icon("expand")}</button>
           <button class="kb-btn is-icon is-ghost" data-act="stop" title="Stop (Esc)">${icon("stop")}</button>
         </div>
         <div class="kb-pmvg-bar"><i data-h="bar"></i></div>
+        <div class="kb-pmvg-info" data-h="info" hidden></div>
         <div class="kb-pmvg-msg" data-h="msg">Preparing clips …</div>
         <div class="kb-pmvg-end" data-h="end" hidden></div>
       </div>`;
@@ -1293,6 +1432,8 @@ class Generator {
       if (a === "tap") this.tap();
       if (a === "voicemode") this.cycleVoiceMode();
       if (a === "full") this.fullscreen();
+      if (a === "info") this.toggleInfo();
+      if (a === "hidebar") this.toggleBar();
       if (a === "stop") this.done ? this.close() : this.finish(true);
     });
     this.onKey = (e) => {
@@ -1303,6 +1444,8 @@ class Generator {
       else if ((e.key === "t" || e.key === "T") && this.ext && !e.repeat) this.tap();
       else if ((e.key === "[" || e.key === "]") && this.ext) this.nudge(e.key === "]" ? 0.05 : -0.05);
       else if (e.key === "f" || e.key === "F") this.fullscreen();
+      else if (e.key === "i" || e.key === "I") this.toggleInfo();
+      else if (e.key === "h" || e.key === "H") this.toggleBar();
       else return;
       e.preventDefault();
     };
@@ -1312,6 +1455,78 @@ class Generator {
       if (r) this.setVolume(r.dataset.vol, Number(r.value));
     });
     this.paintSound();
+    // The bar goes away after 2.5 s without the mouse moving (the cursor too) – H hides it for good
+    const wake = () => {
+      this.stage.classList.remove("is-idle");
+      clearTimeout(this.idleT);
+      const sleep = () => {
+        if (this.el.querySelector(".kb-pmvg-hud:hover")) this.idleT = setTimeout(sleep, 1000);
+        else this.stage.classList.add("is-idle");
+      };
+      this.idleT = setTimeout(sleep, 2500);
+    };
+    el.addEventListener("mousemove", wake);
+    el.addEventListener("pointerdown", wake);
+    wake();
+    const saved = store.get("pmvgen", {});
+    this.stage.classList.toggle("is-nohud", !!saved.hudOff);
+    if (saved.clipInfo) this.toggleInfo(true);
+  }
+
+  toggleBar() {
+    const off = !this.stage.classList.contains("is-nohud");
+    this.stage.classList.toggle("is-nohud", off);
+    const saved = store.get("pmvgen", {});
+    saved.hudOff = off;
+    store.set("pmvgen", saved);
+    if (off) toast("Bar hidden – H shows it again", "ok");
+  }
+
+  // Clip info: what's on screen (name, file, size, state) and what had to be skipped, and why
+  toggleInfo(on) {
+    const box = this.h("info");
+    const show = on != null ? on : box.hidden;
+    box.hidden = !show;
+    const saved = store.get("pmvgen", {});
+    saved.clipInfo = show;
+    store.set("pmvgen", saved);
+    if (show) this.paintInfo();
+  }
+  paintInfo() {
+    const box = this.h("info");
+    if (box.hidden) return;
+    const state = (m) => {
+      if (m.kind === "image") return ["image", false];
+      const v = m.el;
+      if (v.error) return [mediaError(v.error), true];
+      if (!v.videoWidth) return ["no picture – the browser can't decode this video", true];
+      if (v.readyState < 2) return ["loading …", false];
+      if (m.live && m.live.lum != null && m.live.lum < 6) return ["black picture", true];
+      return [v.paused ? "paused" : "playing", false];
+    };
+    const row = (m, i) => {
+      const [st, bad] = state(m);
+      const name = m.name || m.key;
+      return `<div><b>${i + 1}</b> ${esc(name)}${m.file && m.file !== name ? ` <small>${esc(m.file)}</small>` : ""} <small>${m.w}×${m.h}</small> <span class="${bad ? "is-bad" : ""}">${esc(st)}</span></div>`;
+    };
+    const fails = (this.failed || []).slice(-5).reverse();
+    box.innerHTML =
+      [...new Set(this.groups)].filter(Boolean).map(row).join("") +
+      (fails.length ? `<div class="kb-pmvg-infohead">Skipped</div>` + fails.map((f) => `<div class="is-bad">${esc(f.name)} <small>${esc(f.file || "")}</small> – ${esc(f.why)}${f.n > 1 ? ` <small>×${f.n}</small>` : ""}</div>`).join("") : "");
+  }
+  // A clip that failed: listed once (with a count) and not tried again in this show
+  noteFail(s, e) {
+    const why = e.why || e.message || String(e);
+    this.failed = this.failed || [];
+    const known = this.failed.find((f) => f.key === s.key);
+    if (known) {
+      known.n++;
+      known.why = why;
+      this.failed.push(this.failed.splice(this.failed.indexOf(known), 1)[0]);
+    } else this.failed.push({ key: s.key, name: s.name || s.key, file: s.file, why, n: 1 });
+    if (this.failed.length > 20) this.failed.shift();
+    (this.badKeys = this.badKeys || new Set()).add(s.key);
+    if (!known) console.warn(`[PMV Generator] clip skipped: ${s.name || s.key} – ${why}`);
   }
 
   // ---------- Adjust sound live (top bar) ----------
@@ -1387,7 +1602,10 @@ class Generator {
     const found = lib.matching(this.S);
     // A new random order each round; videos and images alternate
     const lists = kinds.map((k) =>
-      shuffle(found.filter((it) => it.kind === k)).map((it) => ({ kind: it.kind, id: it.id, key: it.id, url: lib.urlOf(it), dur: it.dur || 0, item: it }))
+      shuffle(found.filter((it) => it.kind === k)).map((it) => {
+        const file = String(it.path || (it.file && it.file.name) || "").split(/[\\/]/).pop();
+        return { kind: it.kind, id: it.id, key: it.id, url: lib.urlOf(it), dur: it.dur || 0, item: it, name: file.replace(/\.[^.]+$/, "") || it.id, file: it.path || file };
+      })
     );
     const mixed = [];
     for (let i = 0; lists.some((l) => i < l.length); i++) lists.forEach((l) => i < l.length && mixed.push(l[i]));
@@ -1404,6 +1622,7 @@ class Generator {
         await this.fetching;
       }
       const s = this.sources[this.srcIdx++];
+      if (this.badKeys && this.badKeys.has(s.key) && tries < this.sources.length) continue; // failed before
       // Variety: skip what was just shown or is being prepared (with a small selection, take it eventually)
       if (!this.S.variety || tries >= this.sources.length || !this.isRecent(s)) return s;
     }
@@ -1427,7 +1646,8 @@ class Generator {
   fillPool() {
     // Enough supply for a layout change with four new fields
     // (match cuts need a bit more choice)
-    while (!this.done && this.ready.length + this.preparing < (this.S.matchCut ? 8 : 6)) {
+    // At most 3 at once: each one decodes and seeks its video – with 4K several at once choke the decoder
+    while (!this.done && this.ready.length + this.preparing < (this.S.matchCut ? 8 : 6) && this.preparing < 3) {
       this.preparing++;
       this.prepareOne()
         .then((m) => {
@@ -1445,6 +1665,15 @@ class Generator {
 
   async prepareOne() {
     const s = await this.nextSource();
+    try {
+      return await this.prepareFrom(s);
+    } catch (e) {
+      if (!e.skip) this.noteFail(s, e);
+      throw e;
+    }
+  }
+
+  async prepareFrom(s) {
     if (s.kind === "image") {
       const img = new Image();
       img.decoding = "async";
@@ -1456,8 +1685,8 @@ class Generator {
         throw e;
       }
       measured(s.item, img.naturalWidth, img.naturalHeight, 0, this.S);
-      const m = { kind: "image", el: img, w: img.naturalWidth, h: img.naturalHeight, id: s.id, key: s.key, kb: Math.random() < 0.5 ? 1 : -1 };
-      m.sig = analyze(img, m.w, m.h);
+      const m = { kind: "image", el: img, w: img.naturalWidth, h: img.naturalHeight, id: s.id, key: s.key, kb: Math.random() < 0.5 ? 1 : -1, name: s.name, file: s.file };
+      m.sig = await analyzeAsync(img, m.w, m.h);
       if (this.S.smartCrop) m.focus = m.sig.focus;
       return m;
     }
@@ -1470,6 +1699,8 @@ class Generator {
     try {
       v.src = s.url;
       await withTimeout(once(v, "loadedmetadata"), 8000);
+      // Opens but no picture (e.g. a codec the browser can't decode): skip it – else it's a black field
+      if (!v.videoWidth || !v.videoHeight) throw Object.assign(new Error("no picture"), { why: "no picture – the browser can't decode this video (codec?)", unplayable: true });
       const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : s.dur;
       measured(s.item, v.videoWidth, v.videoHeight, dur, this.S);
       const rand = () => (dur > 10 ? dur * 0.08 + Math.random() * Math.max(0, dur * 0.84 - 4) : 0);
@@ -1481,16 +1712,17 @@ class Generator {
       let start = rand();
       let info = null;
       if (this.S.bestSpots && dur > 10) {
-        // Look at several random spots; two frames each for motion
-        // (when the supply runs low, only two candidates – that's faster)
-        const n = this.ready.length < 2 ? 2 : 4;
+        // Look at several random spots; two frames each for motion. Big videos (above 1440p) and a
+        // low supply look at fewer – every seek costs, and 4K seeks are slow.
+        const big = v.videoWidth * v.videoHeight > 2560 * 1440;
+        const n = this.ready.length < 2 || big ? 2 : 4;
         const cands = Array.from({ length: n }, () => ({ t: rand(), bonus: 0 }));
         let best = -1;
         for (const c of cands) {
           await seek(c.t);
-          const a = analyze(v, v.videoWidth, v.videoHeight);
+          const a = await analyzeAsync(v, v.videoWidth, v.videoHeight);
           await seek(Math.min(dur - 0.1, c.t + 0.35));
-          const b = analyze(v, v.videoWidth, v.videoHeight);
+          const b = await analyzeAsync(v, v.videoWidth, v.videoHeight);
           const sc = spotScore(a, b, c.bonus);
           if (sc > best) {
             best = sc;
@@ -1500,14 +1732,15 @@ class Generator {
         }
       }
       await seek(start);
-      const m = { kind: "video", el: v, w: v.videoWidth, h: v.videoHeight, id: s.id, key: s.key, start };
-      m.sig = info || analyze(v, m.w, m.h);
+      const m = { kind: "video", el: v, w: v.videoWidth, h: v.videoHeight, id: s.id, key: s.key, start, name: s.name, file: s.file };
+      m.sig = info || (await analyzeAsync(v, m.w, m.h));
       if (this.S.smartCrop) {
         m.focus = Object.assign({}, m.sig.focus);
         m.focusTarget = Object.assign({}, m.focus);
       }
       return m;
     } catch (e) {
+      if (!e.why) e.why = v.error ? mediaError(v.error) : e.message === "Timed out" ? "didn't load within 8 s" : e.message;
       if (e.unplayable) s.item.bad = s.item.probed = true; // the browser can't play it – leave it out
       this.release({ kind: "video", el: v });
       throw e;
@@ -1534,7 +1767,7 @@ class Generator {
   takeMedia(aspect, out) {
     if (!this.ready.length) return null;
     let outSig = null;
-    if (this.S.matchCut && out) outSig = out.kind === "video" && out.el.readyState >= 2 ? analyze(out.el, out.w, out.h) : out.sig;
+    if (this.S.matchCut && out) outSig = out.live || out.sig; // (measured in the background, see trackFocus)
     let best = 0;
     let score = Infinity;
     this.ready.slice(0, this.S.matchCut ? 8 : 5).forEach((m, i) => {
@@ -1553,8 +1786,22 @@ class Generator {
     if (m.kind === "video") {
       m.el.playbackRate = this.rate || 1;
       m.el.play().catch(() => {});
+      this.watchFrames(m);
     }
     return m;
+  }
+
+  // A clip on screen got a new picture → draw soon (see loop)
+  watchFrames(m) {
+    const v = m.el;
+    if (m.vfc || !v.requestVideoFrameCallback) return;
+    m.vfc = true;
+    const cb = () => {
+      if (this.done || !this.groups.includes(m)) return (m.vfc = false);
+      this.freshFrame = true;
+      v.requestVideoFrameCallback(cb);
+    };
+    v.requestVideoFrameCallback(cb);
   }
 
   dropUnused(old) {
@@ -1680,6 +1927,7 @@ class Generator {
   // for a single song; with a playlist or Plex the song position jumps (next song, seeking) while
   // the show time keeps running smoothly.
   pos() {
+    if (this.song.media && this.mediaEl) return this.mediaEl.currentTime - (this.song.offset || 0);
     if (this.ext) {
       const e = this.ext;
       return e.pos + (e.playing && !this.extHeld ? (performance.now() - e.perf) / 1000 : 0) + (this.S.plexSync || 0);
@@ -1708,7 +1956,10 @@ class Generator {
       try {
         this.src.stop();
       } catch (e) { /* not started yet */ }
+      this.src = null;
     }
+    if (this.song.media) return this.playMedia(at);
+    if (this.mediaEl) this.mediaEl.pause();
     const src = this.ac.createBufferSource();
     src.buffer = this.song.buffer;
     src.connect(this.songGain);
@@ -1721,6 +1972,30 @@ class Generator {
       if (this.music && this.music.type === "list") this.skip(1, true);
       else this.finish(false);
     };
+  }
+
+  // A long song: streamed from its file (from song.offset to song.end); the clock is the element's time
+  playMedia(at) {
+    if (!this.mediaEl) {
+      this.mediaEl = new Audio();
+      this.mediaEl.preload = "auto";
+      this.ac.createMediaElementSource(this.mediaEl).connect(this.songGain);
+    }
+    const el = this.mediaEl;
+    if (el.src !== this.song.media) el.src = this.song.media;
+    el.currentTime = (this.song.offset || 0) + at;
+    this.mediaOver = false;
+    if (!this.paused) el.play().catch((e) => this.fail(e));
+  }
+  // Checked every frame: the long song (or its part) is over → next song / end
+  checkMedia() {
+    const el = this.mediaEl;
+    if (!el || !this.song.media || this.mediaOver || this.paused || this.done) return;
+    if (el.ended || (this.song.end && el.currentTime >= this.song.end)) {
+      this.mediaOver = true;
+      if (this.music && this.music.type === "list") this.skip(1, true);
+      else this.finish(false);
+    }
   }
 
   // Another song in the running show (call rebase() once its position is set)
@@ -1875,6 +2150,7 @@ class Generator {
 
   loop() {
     if (this.done) return;
+    this.checkMedia();
     const p = this.pos();
     const t = p + (this.vOff || 0);
     const beats = this.song.beats;
@@ -1888,11 +2164,15 @@ class Generator {
       if (ev.type === "stutter") this.stutter(t);
       if (ev.type === "strobe") this.comp.strobe(t);
     }
-    // Draw at most ~60 times a second: 120/144 Hz screens would double the work for nothing
-    // (beats and cuts above are still checked on every frame, so the timing stays exact)
+    // Draw when a clip on screen has a new picture (every clip frame shows up, evenly – also on 144/240 Hz
+    // screens, where a fixed ~60 per second skipped and bunched clip frames), at most every 4 ms;
+    // without a new picture ~60 times a second for the effects.
+    // (beats and cuts above are checked on every frame, so the timing stays exact)
     const ms = performance.now();
-    if (!this.drawMs || ms - this.drawMs >= 15) {
+    const since = ms - (this.drawMs || -1e9);
+    if (since >= 15 || (this.freshFrame && since >= 4)) {
       this.drawMs = ms;
+      this.freshFrame = false;
       this.trackFocus();
       this.st.t = t;
       this.st.slots = this.slots;
@@ -2037,15 +2317,30 @@ class Generator {
   // The same measurement also keeps brightness/color up to date (even out brightness)
   trackFocus() {
     const S = this.S;
-    if (!S.smartCrop && !S.lookEven) return;
     const now = performance.now();
+    if (!this.infoT || now - this.infoT > 500) {
+      this.infoT = now;
+      this.paintInfo();
+    }
     if (!this.focusT || now - this.focusT > 400) {
       this.focusT = now;
       this.videos().forEach((m) => {
-        if (m.el.readyState < 2) return;
-        const a = analyze(m.el, m.w, m.h);
-        if (S.smartCrop) m.focusTarget = a.focus;
-        if (a.lum != null && m.sig && m.sig.lum != null) m.sig.lum += (a.lum - m.sig.lum) * 0.3;
+        if (m.el.error) {
+          this.noteFail(m, { why: mediaError(m.el.error) });
+          this.groups.forEach((g, gi) => g === m && this.cutGroup(gi, this.now()));
+          return;
+        }
+        if (m.el.readyState < 2 || m.measuring) return;
+        // also without smart crop: match cuts and the clip info (black picture) use it
+        m.measuring = true;
+        analyzeAsync(m.el, m.w, m.h)
+          .then((a) => {
+            if (!a.gray) return;
+            m.live = a;
+            if (S.smartCrop) m.focusTarget = a.focus;
+            if (a.lum != null && m.sig && m.sig.lum != null) m.sig.lum += (a.lum - m.sig.lum) * 0.3;
+          })
+          .finally(() => (m.measuring = false));
       });
     }
     if (!S.smartCrop) return;
@@ -2100,11 +2395,13 @@ class Generator {
     b.innerHTML = icon(this.paused ? "play" : "pause");
     if (this.paused) {
       this.ac.suspend();
+      if (this.mediaEl && this.song.media) this.mediaEl.pause();
       this.videos().forEach((m) => m.el.pause());
       if (this.rec && this.rec.state === "recording") this.rec.pause();
       this.say("Paused – Space continues");
     } else {
       this.ac.resume();
+      if (this.mediaEl && this.song.media) this.mediaEl.play().catch(() => {});
       this.videos().forEach((m) => m.el.play().catch(() => {}));
       if (this.rec && this.rec.state === "paused") this.rec.resume();
       this.say("");
@@ -2119,6 +2416,11 @@ class Generator {
       if (this.src) this.src.onended = null;
       if (this.src) this.src.stop();
     } catch (e) { /* already stopped */ }
+    if (this.mediaEl) {
+      this.mediaEl.pause();
+      this.mediaEl.removeAttribute("src");
+      this.mediaEl.load();
+    }
     new Set(this.groups).forEach((m) => this.release(m));
     this.groups = [];
     this.ready.forEach((m) => this.release(m));
@@ -2206,6 +2508,9 @@ const once = (el, ev) =>
     el.addEventListener(ev, res, { once: true });
     el.addEventListener("error", () => rej(Object.assign(new Error("File can't be played"), { unplayable: true })), { once: true });
   });
+const mediaError = (err) =>
+  ({ 1: "loading was aborted", 2: "network error while loading", 3: "can't be decoded (broken file or codec)", 4: "format not supported by the browser" })[err && err.code] || "error";
+
 function withTimeout(p, ms) {
   return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("Timed out")), ms))]);
 }

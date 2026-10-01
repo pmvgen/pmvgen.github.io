@@ -3,7 +3,7 @@
 // whatever Plex player you use) or take songs from your Plex playlists / music library.
 // Everything talks straight from the browser to plex.tv and your server; the token stays in this browser.
 
-import { analyzeSong } from "./beats.js";
+import { analyzeFile } from "./beats.js";
 
 // (overridable for tests)
 const tv = () => window.PMVGEN_PLEX_TV || "https://plex.tv";
@@ -174,7 +174,7 @@ export class PlexClient {
     if (part[0] && part[0].key) {
       try {
         const r = await fetch(this.url(part[0].key));
-        if (r.ok) return Object.assign(await analyzeSong(await r.arrayBuffer()), { name });
+        if (r.ok) return Object.assign(await analyzeFile(await r.blob()), { name });
       } catch (e) {
         buf = e;
       }
@@ -182,7 +182,7 @@ export class PlexClient {
     const mp3 = this.url("/music/:/transcode/universal/start.mp3", `path=${encodeURIComponent("/library/metadata/" + m.ratingKey)}&mediaIndex=0&partIndex=0&protocol=http&directPlay=0&directStream=0&session=${Date.now().toString(36)}&${ident()}`);
     const r = await fetch(mp3);
     if (!r.ok) throw buf || new Error(`Plex couldn't deliver “${name}” (HTTP ${r.status})`);
-    return Object.assign(await analyzeSong(await r.arrayBuffer()), { name });
+    return Object.assign(await analyzeFile(await r.blob()), { name });
   }
 }
 
