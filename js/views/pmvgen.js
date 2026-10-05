@@ -9,7 +9,8 @@ import * as lib from "../library.js";
 import { fixWebmDuration } from "../webmfix.js";
 import { analyzeFile, analyzeBuffer, sliceBuffer, songFromFrames, rescale, shift } from "../beats.js";
 import { scanPmv } from "../pmvscan.js";
-import { analyzeAsync, spotScore, matchDist } from "../pmvsmart.js";
+import { analyzeAsync, spotScore, matchDist, isCut } from "../pmvsmart.js";
+import { analyzeBars } from "../bars.js";
 import { folderPicker } from "./folderpick.js";
 import { LAYOUTS, slotsFor, aspectOfGroup, Compositor } from "../pmvfx.js";
 import { Playlist, fileTrack, filesFromDrop, isSongFile } from "../music.js";
@@ -43,10 +44,12 @@ const DEFAULTS = {
   folders: [], // [{ id, path }] – empty = all folders
   shape: "all", // clip shape: all | portrait | landscape
   bestSpots: true, // best moments instead of random
+  cleanCuts: true, // a clip's start has no scene change in the first seconds (it would cut by itself)
   smartCrop: true, // crop follows what matters
   variety: true, // same clip not shortly after itself
   matchCut: true, // pick the best-matching clip at each cut
   cut: "auto",
+  bars: true, // cuts on the bar's beats, layouts change where a phrase starts (not just "every 4th beat")
   layouts: { full: true, kaleido: true, duo: true, trim: true, tri: true, quad: true },
   // Effects: a calm start – zoom-in entry, flash, zoom pulse and RGB split; the rest is opt-in
   fx: { flash: true, zoom: true, shake: false, glitch: false, stutter: false, hue: false, rgb: true, echo: false, tunnel: false, invert: false, whip: false, zoomin: true, speed: false, voice: true, vhs: false, strobe: false, text: false, kenburns: true, lines: true },
@@ -287,6 +290,7 @@ export function render(main) {
         <span class="kb-lab-t">Clip selection</span>
         <div class="kb-pmvg-opts">
           ${sw("bestSpots", "Best moments instead of random", "Looks at several spots per video (motion, skin, contrast) and takes the best one")}
+          ${sw("cleanCuts", "Clean cuts", "With best moments: a clip starts where its scene runs on for the next few seconds – no hidden cut inside the clip that jumps to another scene by itself")}
           ${sw("smartCrop", "Smart crop", "The crop follows what matters in the clip instead of sticking to the center")}
           ${sw("matchCut", "Match cuts", "At each cut, the clip that best matches the previous one in color, brightness and composition comes next")}
           ${sw("variety", "Variety", "The same clip doesn't come up again shortly after")}
@@ -307,6 +311,9 @@ export function render(main) {
           <div class="kb-pmvg-pane" id="pmvg-pane-cut" data-pane="cut">
             <span class="kb-lab-t">When to cut</span>
             <div class="kb-seg" data-seg="cut">${CUTS.map(([v, l, t]) => `<button type="button" data-v="${v}" title="${esc(t)}">${l}</button>`).join("")}</div>
+            <div class="kb-pmvg-opts">
+              ${sw("bars", "Bars and phrases", "Finds the \"one\" of each bar and where a phrase begins: cuts land on the strong beats, split screens change at the start of a phrase")}
+            </div>
             <span class="kb-lab-t">Layouts <small>– change to the beat, the louder the more fields</small></span>
             <div class="kb-chips kb-pmvg-layouts" data-layouts>${Object.entries(LAYOUTS).map(([k, l]) => `<button type="button" class="kb-chip" data-l="${k}" title="${esc(l.hint)}">${layoutIcon(k)}${l.name}</button>`).join("")}</div>
             <span class="kb-lab-t">Fields in 2-/3-way layouts</span>
@@ -453,7 +460,7 @@ export function render(main) {
       out: [S.intro && "Intro", S.outro && "Outro", S.record && "Recording"].filter(Boolean).join(" · ") || "live only",
     };
     main.querySelectorAll("[data-tabsum]").forEach((s) => (s.textContent = tabSum[s.dataset.tabsum]));
-    const clipOpts = [S.bestSpots && "best moments", S.smartCrop && "smart crop", S.matchCut && "match cuts", S.variety && "variety"].filter(Boolean);
+    const clipOpts = [S.bestSpots && "best moments", S.cleanCuts && "clean cuts", S.smartCrop && "smart crop", S.matchCut && "match cuts", S.variety && "variety"].filter(Boolean);
     const src = { scene: "Videos", image: "Images", both: "Videos + images" }[S.source];
     const where = S.folders.length ? `from ${S.folders.length === 1 ? "1 folder" : S.folders.length + " folders"}` : "from all folders";
     $("[data-sum]").innerHTML = [
@@ -740,7 +747,7 @@ export function render(main) {
     $("[data-songinfo]").hidden = false;
     $("[data-songname]").textContent = song.name;
     $("[data-bpm]").textContent = `${Math.round(song.bpm)} BPM · ${fmtDuration(song.duration)} · ${song.beats.length} Beats`;
-    drawWave($("[data-wave]"), song);
+    drawWave($("[data-wave]"), song, songBars(S, song));
     // Several songs: tempo and cutting are per song – they're detected anew for each one
     $("[data-listinfo]").hidden = !playlist;
     if (playlist) $("[data-listn]").textContent = `${playlist.size} songs – the show goes from one to the next (N / P skip). This is the first one.`;
@@ -1284,7 +1291,23 @@ function layoutIcon(id) {
   return `<svg class="kb-pmvg-lay" viewBox="0 0 24 15" aria-hidden="true">${shapes[id]}</svg>`;
 }
 
-function drawWave(canvas, song) {
+// Bars and phrases of a song, worked out once per song (none for very long files)
+const barsCache = new WeakMap();
+function songBars(S, song) {
+  if (!S.bars || !song || song.long) return null;
+  if (!barsCache.has(song)) {
+    let r = null;
+    try {
+      r = analyzeBars(song);
+    } catch (e) {
+      console.warn("[PMV Generator] bars", e);
+    }
+    barsCache.set(song, r);
+  }
+  return barsCache.get(song);
+}
+
+function drawWave(canvas, song, bars = null) {
   const c = canvas.getContext("2d");
   const { width: W, height: H } = canvas;
   c.clearRect(0, 0, W, H);
@@ -1311,7 +1334,7 @@ function drawWave(canvas, song) {
   c.globalAlpha = 1;
   // Bar lines (every 4th beat)
   c.fillStyle = "rgba(251, 239, 244, .35)";
-  song.beats.forEach((t, k) => k % 4 === 0 && c.fillRect((t / song.duration) * W, 0, 1, 8));
+  song.beats.forEach((t, k) => (bars ? bars.downbeat[k] : k % 4 === 0) && c.fillRect((t / song.duration) * W, 0, 1, 8));
 }
 
 // ==========================================================================
@@ -1329,6 +1352,7 @@ class Generator {
     this.song = tpl ? tpl.song : song;
     this.music = tpl ? null : music || null;
     this.S = S;
+    this.setBars();
     this.onClose = onClose;
     this.tpl = tpl || null;
     this.ti = 0;
@@ -1715,18 +1739,43 @@ class Generator {
         // Look at several random spots; two frames each for motion. Big videos (above 1440p) and a
         // low supply look at fewer – every seek costs, and 4K seeks are slow.
         const big = v.videoWidth * v.videoHeight > 2560 * 1440;
-        const n = this.ready.length < 2 || big ? 2 : 4;
+        const urgent = this.ready.length < 2 || big;
+        const n = urgent ? 2 : 4;
         const cands = Array.from({ length: n }, () => ({ t: rand(), bonus: 0 }));
-        let best = -1;
+        // Clean cuts: a clip plays for a few beats from its start – a scene change in that stretch would
+        // jump to another scene by itself. Spots with one are passed over (up to a few more are tried).
+        const clean = !!this.S.cleanCuts && !urgent;
+        const span = clean ? Math.max(1.5, Math.min(4, this.song && this.song.bpm ? (4 * 60) / this.song.bpm : 2.5)) : 0;
+        if (clean) for (let i = 0; i < 4; i++) cands.push({ t: rand(), bonus: 0, extra: true });
+        let best = -Infinity;
+        let anyClean = false;
         for (const c of cands) {
-          await seek(c.t);
+          if (c.extra && anyClean) break; // extra spots only while nothing clean is found
+          const t0 = clean ? Math.min(c.t, Math.max(0, dur - span - 0.5)) : c.t;
+          await seek(t0);
           const a = await analyzeAsync(v, v.videoWidth, v.videoHeight);
-          await seek(Math.min(dur - 0.1, c.t + 0.35));
+          await seek(Math.min(dur - 0.1, t0 + 0.35));
           const b = await analyzeAsync(v, v.videoWidth, v.videoHeight);
-          const sc = spotScore(a, b, c.bonus);
+          let cut = clean && isCut(a, b);
+          if (clean && !cut) {
+            // a few more looks along the stretch
+            let prev = b;
+            for (const f of [0.45, 0.8]) {
+              await seek(Math.min(dur - 0.1, t0 + span * f));
+              const x = await analyzeAsync(v, v.videoWidth, v.videoHeight);
+              if (isCut(prev, x)) {
+                cut = true;
+                break;
+              }
+              prev = x;
+            }
+          }
+          if (clean && !cut) anyClean = true;
+          // motion counts, but a "motion" that is a cut isn't one
+          const sc = cut ? spotScore(a, a, c.bonus) - 5 : spotScore(a, b, c.bonus);
           if (sc > best) {
             best = sc;
-            start = c.t;
+            start = t0;
             info = a;
           }
         }
@@ -2001,6 +2050,7 @@ class Generator {
   // Another song in the running show (call rebase() once its position is set)
   setSong(song) {
     this.song = song;
+    this.setBars();
     this.lastDrop = -99;
     this.h("name").textContent = song.name;
     this.h("bpm").textContent = `${Math.round(song.bpm)} BPM`;
@@ -2191,6 +2241,11 @@ class Generator {
   }
 
   // Direction: decide what happens on each beat
+  // Bars and phrases of the song (bars.js) – none for templates or very long files: then every 4th beat counts
+  setBars() {
+    this.bars = this.tpl ? null : songBars(this.S, this.song);
+  }
+
   onBeat(k, t) {
     const S = this.S;
     const beats = this.song.beats;
@@ -2199,7 +2254,8 @@ class Generator {
     // A drop counts once – otherwise the signal stays up for several beats in a row
     const drop = e - prev > 0.35 && e > 0.6 && k - this.lastDrop >= 16;
     if (drop) this.lastDrop = k;
-    const bar = k % 4 === 0;
+    const B = this.bars;
+    const bar = B ? !!B.downbeat[k] : k % 4 === 0;
     const len = (beats[k + 1] || beats[k] + 0.5) - beats[k];
     const comp = this.comp;
     this.st.energy = e;
@@ -2210,7 +2266,10 @@ class Generator {
     // or – in loud parts – for variety. Calm parts stay calm.
     const want = this.levelFor(e, drop);
     const moodChanged = LAYOUTS[this.layout].level !== want && this.layouts.some((x) => LAYOUTS[x].level === want || want > 1);
-    const due = bar && k - this.layoutBeat >= this.layoutHold && (moodChanged || (want >= 3 && Math.random() < 0.6));
+    // With bars: a layout change waits for the start of a phrase (or, when the mood has changed, at most a bar later than 6 bars)
+    const due = B
+      ? ((B.phrase[k] && k - this.layoutBeat >= this.layoutHold && (moodChanged || (want >= 3 && Math.random() < 0.6))) || (bar && moodChanged && k - this.layoutBeat >= 24))
+      : bar && k - this.layoutBeat >= this.layoutHold && (moodChanged || (want >= 3 && Math.random() < 0.6));
     if (this.tpl) {
       // Cuts and layouts come from the template (applyEvent)
     } else if (this.layouts.length > 1 && (drop || due)) {
@@ -2222,7 +2281,9 @@ class Generator {
     } else {
       // Within the layout: re-cut the fields in turn
       const every = S.cut === "auto" ? (e > 0.72 ? 1 : e > 0.4 ? 2 : 4) : Number(S.cut);
-      if (k - this.lastCut >= every || (every === 4 && bar && k - this.lastCut >= 2)) {
+      // With bars the cuts sit on the bar's grid: every beat, beats 1 and 3, or only the "one" – not "N beats after the last cut"
+      const onGrid = B && 4 % every === 0 ? B.pos[k] % every === 0 && k - this.lastCut >= Math.min(every, 2) : k - this.lastCut >= every;
+      if (onGrid || (every === 4 && bar && k - this.lastCut >= 2)) {
         const n = LAYOUTS[this.layout].groups;
         const gi = this.nextGroup % n;
         if (this.cutGroup(gi, t)) {

@@ -148,8 +148,10 @@ function measure({ px, sw, sh }) {
   let sr = 0;
   let sg = 0;
   let sb = 0;
+  const hist = new Float32Array(16); // brightness distribution: a cut changes it, motion inside a scene hardly does
   for (let i = 0, j = 0; i < gray.length; i++, j += 4) {
     gray[i] = 0.299 * px[j] + 0.587 * px[j + 1] + 0.114 * px[j + 2];
+    hist[gray[i] >> 4]++;
     sr += px[j];
     sg += px[j + 1];
     sb += px[j + 2];
@@ -185,6 +187,7 @@ function measure({ px, sw, sh }) {
     skin: skin / n,
     contrast: edge / n,
     gray,
+    hist: hist.map((x) => x / all),
     color: { r: sr / all, g: sg / all, b: sb / all }, // average color (0–255)
     lum: (0.299 * sr + 0.587 * sg + 0.114 * sb) / all, // average brightness (0–255)
   };
@@ -205,6 +208,17 @@ export function motion(a, b) {
   let s = 0;
   for (let i = 0; i < a.gray.length; i++) s += Math.abs(a.gray[i] - b.gray[i]);
   return Math.min(1, s / a.gray.length / 40);
+}
+
+// Did the scene change between two frames (a hard cut)? The picture differs a lot AND its brightness
+// distribution / average color changed – fast movement inside one scene fails the second test.
+export function isCut(a, b) {
+  if (!a || !b || !a.hist || !b.hist) return false;
+  let h = 0;
+  for (let i = 0; i < 16; i++) h += Math.abs(a.hist[i] - b.hist[i]);
+  h /= 2;
+  const dc = Math.hypot(a.color.r - b.color.r, a.color.g - b.color.g, a.color.b - b.color.b) / 441;
+  return motion(a, b) > 0.5 && (h > 0.35 || dc > 0.18);
 }
 
 // How "good" a spot is: motion counts most, then skin, then contrast
