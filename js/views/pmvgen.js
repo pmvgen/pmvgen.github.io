@@ -67,6 +67,8 @@ const DEFAULTS = {
   bright: 0, // smooth extra brightness (%)
   soft: false, // soft seams: the fields of a split screen blend into each other
   softAmt: 50, // how wide the blend is (%)
+  divW: 2, // width of the dividers between the fields (px at 1280 wide, scales with the picture)
+  cutLead: 0, // cuts land this many ms before the beat (the picture is a touch early, which feels tighter)
   edge: "off", // rim of the picture: off | blur | motion | lens
   edgeAmt: 50, // how strong / how far in (%)
   smooth: true, // clips scaled smoothly (less pixelated)
@@ -343,6 +345,7 @@ export function render(main) {
               <div class="kb-seg" data-seg="pace"><button type="button" data-v="slow" title="Calm: every 8 beats · medium: every 4 · loud: every 2">Slow</button><button type="button" data-v="normal" title="Calm: every 4 beats · medium: every 2 · loud: every beat">Normal</button><button type="button" data-v="fast" title="Calm: every 2 beats · medium and loud: every beat">Fast</button></div>
             </div>
               <div class="kb-pmvg-opts">
+              <label class="kb-pmvg-range" title="The cut happens a little before the beat, so the picture is already there when the beat hits (2 frames are about 33 ms)"><span>${icon("sliders")}Cut ahead of the beat</span><input type="range" min="0" max="80" step="5" data-r="cutLead" aria-label="Cut ahead of the beat"><output data-ro="cutLead" data-unit=" ms"></output></label>
               ${sw("bars", "Bars and phrases", "Finds the \"one\" of each bar and where a phrase begins: cuts land on the strong beats, split screens change at the start of a phrase")}
               </div>
             </div>
@@ -433,6 +436,9 @@ export function render(main) {
             </div>
             <div class="kb-pmvg-sound" data-softbox>
               <label class="kb-pmvg-range"><span>${icon("sliders")}Softness</span><input type="range" min="0" max="100" step="5" data-r="softAmt" aria-label="How soft the seams are"><output data-ro="softAmt"></output></label>
+            </div>
+            <div class="kb-pmvg-sound" data-divbox>
+              <label class="kb-pmvg-range"><span>${icon("sliders")}Divider width</span><input type="range" min="1" max="8" step="1" data-r="divW" aria-label="Width of the dividers between the fields"><output data-ro="divW" data-unit=" px"></output></label>
             </div>
             <span class="kb-lab-t">Rim of the picture <small>– only the edges, the middle stays sharp</small></span>
             <div class="kb-seg" data-seg="edge"><button type="button" data-v="off">Off</button><button type="button" data-v="blur" title="Soft blur towards the edges">Blur</button><button type="button" data-v="motion" title="Light motion blur: streaks sideways at the left and right edge, up and down at the top and bottom">Motion</button><button type="button" data-v="lens" title="The edges look bent outwards, like through a lens">Lens</button></div>
@@ -549,6 +555,7 @@ export function render(main) {
     $("[data-lookbox]").hidden = S.look === "none";
     $("[data-edgebox]").hidden = S.edge === "off";
     $("[data-softbox]").hidden = !S.soft;
+    $("[data-divbox]").hidden = !!S.soft;
     $("[data-pulsebox]").hidden = !S.fx.zoom;
     $("[data-fsbox]").hidden = !S.fsOn;
     main.querySelectorAll("[data-t]").forEach((c) => (c.checked = !!getPath(S, c.dataset.t)));
@@ -570,9 +577,10 @@ export function render(main) {
     $("[data-collapseall]").classList.toggle("is-closed", !anyOpen);
     main.querySelectorAll("[data-r]").forEach((r) => {
       r.value = S[r.dataset.r];
-      r.style.setProperty("--p", S[r.dataset.r] + "%");
+      const lo = Number(r.min || 0);
+      r.style.setProperty("--p", ((S[r.dataset.r] - lo) / (Number(r.max || 100) - lo)) * 100 + "%");
     });
-    main.querySelectorAll("[data-ro]").forEach((o) => (o.textContent = S[o.dataset.ro] + " %"));
+    main.querySelectorAll("[data-ro]").forEach((o) => (o.textContent = S[o.dataset.ro] + (o.dataset.unit ?? " %")));
     // Without clip audio, clip volume and "when" have no effect
     ["[data-clipvol]", "[data-seg=voiceMode]", "[data-voicewhen]"].forEach((q) => $(q).classList.toggle("is-dim", !S.fx.voice));
     $("[data-voicehint]").textContent = !S.fx.voice
@@ -2501,7 +2509,9 @@ class Generator {
     const p = this.pos();
     const t = p + (this.vOff || 0);
     const beats = this.song.beats;
-    while (this.bi < beats.length && beats[this.bi] <= p) this.onBeat(this.bi++, t);
+    // (with "cut ahead of the beat" the cut is made a few ms early; the zoom pulse still sits on the real beat)
+    const lead = (this.S.cutLead || 0) / 1000;
+    while (this.bi < beats.length && beats[this.bi] - lead <= p) this.onBeat(this.bi++, t);
     if (this.tpl) {
       const evs = this.tpl.events;
       while (this.ti < evs.length && evs[this.ti].t <= t) this.applyEvent(evs[this.ti++], t);

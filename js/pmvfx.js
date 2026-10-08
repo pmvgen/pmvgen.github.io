@@ -176,9 +176,13 @@ export class Compositor {
     let pulse = 0;
     if (fx.zoom && this.pulseAmt > 0) {
       const after = (st.beatAmt || 0) * Math.exp(-Math.max(0, t - st.beatT) * 5.5);
-      const d = st.nextT != null ? st.nextT - t : 9;
-      const x = d >= 0 && d < 0.11 ? 1 - d / 0.11 : 0;
-      const before = (st.nextAmt || 0) * x * x * (3 - 2 * x);
+      const ease = (T, amt) => {
+        const d = T != null ? T - t : 9;
+        const x = d >= 0 && d < 0.11 ? 1 - d / 0.11 : 0;
+        return (amt || 0) * x * x * (3 - 2 * x);
+      };
+      // (with "cut ahead of the beat" the current beat can still lie ahead: ease towards that one as well)
+      const before = Math.max(ease(st.nextT, st.nextAmt), st.beatT > t ? ease(st.beatT, st.beatAmt) : 0);
       pulse = Math.max(after, before) * this.pulseAmt;
     }
 
@@ -311,9 +315,9 @@ export class Compositor {
     // Only the rim of the picture is softened / smeared / bent – the middle stays sharp
     if (this.S.edge && this.S.edge !== "off") this.edgeSoft(this.S.edge, Math.max(0, Math.min(1, (this.S.edgeAmt ?? 50) / 100)));
 
-    // Dividers between fields, glowing to the beat – thin (2 px at 720p, 3 px at 1080p); none with soft seams
+    // Dividers between fields, glowing to the beat – width from the setting (2 px at 720p, 3 px at 1080p by default); none with soft seams
     if (st.slots.length > 1 && !softOn) {
-      const dw = Math.max(2, Math.round(W / 640));
+      const dw = Math.max(1, Math.round((this.S.divW || 2) * W / 1280));
       const h2 = dw / 2;
       const glow = Math.exp(-(t - st.beatT) * 7);
       g.fillStyle = "#0a0309";
