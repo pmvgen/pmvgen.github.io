@@ -432,11 +432,11 @@ export class Compositor {
   softSeams(slots) {
     const { W, H } = this;
     const a = Math.max(0, Math.min(1, (this.S.softAmt == null ? 50 : this.S.softAmt) / 100));
-    const k = 0.025 + 0.075 * a;
+    const k = 0.004 + 0.026 * a; // half the band as a share of the picture: ~0.4 % … 3 %
     const minW = Math.min(...slots.map((x) => x.w));
     const minH = Math.min(...slots.map((x) => x.h));
-    const fH = Math.round(Math.min(k * W, 0.16 * minW)); // half the width of the band across a vertical seam
-    const fV = Math.round(Math.min(k * H, 0.16 * minH));
+    const fH = Math.round(Math.min(k * W, 0.08 * minW)); // half the width of the band across a vertical seam
+    const fV = Math.round(Math.min(k * H, 0.08 * minH));
     const done = new Set();
     for (const s of slots) {
       if (s.x > 1 && fH >= 2 && !done.has("v" + s.x + ":" + s.y)) {

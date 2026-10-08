@@ -142,7 +142,8 @@ const CUTS = [
 const SECTIONS = [
   ["cut", "Cutting", "When to cut and which split screens"],
   ["fx", "Effects", "What happens on cuts, beats and drops"],
-  ["look", "Look & picture", "Colors, format and how clips fill the frame"],
+  ["look", "Color & look", "Color mood, brightness and film effects"],
+  ["frame", "Picture & frame", "Format, fit, seams and edges"],
   ["sound", "Sound", "Song and clip volume"],
   ["fs", "Funscript", "A script for The Handy that follows the song"],
   ["out", "Output", "Intro, outro and recording"],
@@ -307,11 +308,14 @@ export function render(main) {
           </div>
         </div>
         <p class="kb-hint kb-pmvg-count" data-count></p>
-        <span class="kb-lab-t">Clip selection</span>
+        <span class="kb-lab-t">Clip selection <small>– which part of a scene is taken</small></span>
         <div class="kb-pmvg-opts">
           ${sw("bestSpots", "Best moments instead of random", "Looks at several spots per video (motion, skin, contrast) and takes the best one")}
           ${sw("cleanCuts", "Clean cuts", "With best moments: a clip starts where its scene runs on for the next few seconds – no hidden cut inside the clip that jumps to another scene by itself")}
           ${sw("smartCrop", "Smart crop", "The crop follows what matters in the clip instead of sticking to the center")}
+        </div>
+        <span class="kb-lab-t">Clip order <small>– which clip follows which</small></span>
+        <div class="kb-pmvg-opts">
           ${sw("matchCut", "Match cuts", "At each cut, the clip that best matches the previous one in color, brightness and composition comes next")}
           ${sw("sequenced", "Follow the scenes' timeline", "A clip comes from the part of its scene that matches how far the song is: the start of the song uses the beginnings of the scenes, the end of the song their endings (a song of known length only)")}
           ${sw("variety", "Variety", "The same clip doesn't come up again shortly after")}
@@ -330,17 +334,20 @@ export function render(main) {
         <div class="kb-pmvg-sec" data-sec="cut">
           ${secHead("cut")}
           <div class="kb-pmvg-pane" id="pmvg-pane-cut" data-pane="cut">
+            <div class="kb-pmvg-group">
+              <div class="kb-pmvg-grouphead"><b>Timing</b><small>When the picture changes</small></div>
             <span class="kb-lab-t">When to cut</span>
             <div class="kb-seg" data-seg="cut">${CUTS.map(([v, l, t]) => `<button type="button" data-v="${v}" title="${esc(t)}">${l}</button>`).join("")}</div>
             <div data-pacebox>
               <span class="kb-lab-t">Pace <small>– how fast “Automatic” cuts</small></span>
               <div class="kb-seg" data-seg="pace"><button type="button" data-v="slow" title="Calm: every 8 beats · medium: every 4 · loud: every 2">Slow</button><button type="button" data-v="normal" title="Calm: every 4 beats · medium: every 2 · loud: every beat">Normal</button><button type="button" data-v="fast" title="Calm: every 2 beats · medium and loud: every beat">Fast</button></div>
             </div>
-            <div class="kb-pmvg-opts">
-              ${sw("reveal", "Reveal opening", "The first clip sits small in the middle with rounded corners and slowly grows – at the first drop the picture opens up into the layouts (songs with a known length; not with templates)")}
-              ${sw("scroll", "Scrolling sides", "In 3-way layouts the middle clip stays longer while the clips at the sides scroll up or down, like swiping through a feed (needs the 3-way layouts)")}
+              <div class="kb-pmvg-opts">
               ${sw("bars", "Bars and phrases", "Finds the \"one\" of each bar and where a phrase begins: cuts land on the strong beats, split screens change at the start of a phrase")}
+              </div>
             </div>
+            <div class="kb-pmvg-group">
+              <div class="kb-pmvg-grouphead"><b>Split screens</b><small>Which layouts and how they are filled</small></div>
             <span class="kb-lab-t">Layouts <small>– change to the beat, the louder the more fields</small></span>
             <div class="kb-chips kb-pmvg-layouts" data-layouts>${Object.entries(LAYOUTS).map(([k, l]) => `<button type="button" class="kb-chip" data-l="${k}" title="${esc(l.hint)}">${layoutIcon(k)}${l.name}</button>`).join("")}</div>
             <span class="kb-lab-t">Clip shape per layout <small>– e.g. landscape clips only in full screen, portrait only in 3-way (set “Clip shape” in What to “All”)</small></span>
@@ -348,6 +355,14 @@ export function render(main) {
             <span class="kb-lab-t">Fields in 2-/3-way layouts</span>
             <div class="kb-seg" data-seg="split"><button type="button" data-v="cols" title="Columns – also in portrait format">side by side</button><button type="button" data-v="rows" title="Rows">stacked</button></div>
             <p class="kb-hint kb-pmvg-tip" data-tip hidden></p>
+            </div>
+            <div class="kb-pmvg-group">
+              <div class="kb-pmvg-grouphead"><b>Extras</b><small>Opening and scrolling</small></div>
+              <div class="kb-pmvg-opts">
+              ${sw("reveal", "Reveal opening", "The first clip sits small in the middle with rounded corners and slowly grows – at the first drop the picture opens up into the layouts (songs with a known length; not with templates)")}
+              ${sw("scroll", "Scrolling sides", "In 3-way layouts the middle clip stays longer while the clips at the sides scroll up or down, like swiping through a feed (needs the 3-way layouts)")}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -374,6 +389,8 @@ export function render(main) {
         <div class="kb-pmvg-sec" data-sec="look">
           ${secHead("look")}
           <div class="kb-pmvg-pane" id="pmvg-pane-look" data-pane="look">
+            <div class="kb-pmvg-group">
+              <div class="kb-pmvg-grouphead"><b>Color</b><small>Mood and brightness</small></div>
             <span class="kb-lab-t">Color look <small>– all clips in the same color mood</small></span>
             <div class="kb-seg kb-pmvg-looks" data-seg="look">${LOOKS.map(([v, l]) => `<button type="button" data-v="${v}"><i class="kb-pmvg-lookdot is-${v}"></i>${l}</button>`).join("")}</div>
             <div class="kb-pmvg-sound" data-lookbox>
@@ -384,6 +401,32 @@ export function render(main) {
             <div class="kb-pmvg-sound">
               <label class="kb-pmvg-range"><span>${icon("eye")}Brightness</span><input type="range" min="0" max="100" step="5" data-r="bright" aria-label="Brightness"><output data-ro="bright"></output></label>
             </div>
+              <div class="kb-pmvg-opts">
+              ${sw("lookEven", "Even out brightness", "Clips that are too dark get brightened, too bright ones toned down – looks all of a piece")}
+              </div>
+            </div>
+            <div class="kb-pmvg-group">
+              <div class="kb-pmvg-grouphead"><b>Film effects</b><small>Old-film and zoom looks on every clip</small></div>
+              <div class="kb-pmvg-opts">
+              ${LOOK_FX.map(fxSw).join("")}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="kb-pmvg-sec" data-sec="frame">
+          ${secHead("frame")}
+          <div class="kb-pmvg-pane" id="pmvg-pane-frame" data-pane="frame">
+            <div class="kb-pmvg-group">
+              <div class="kb-pmvg-grouphead"><b>Format</b><small>Shape of the picture and of the window</small></div>
+            <span class="kb-lab-t">Picture <small>– “Fit” shows the whole clip, “Fill” crops it to fill the frame</small></span>
+            <div class="kb-pmvg-row">
+              <div class="kb-seg" data-seg="format"><button type="button" data-v="16:9">16:9 landscape</button><button type="button" data-v="9:16">9:16 portrait</button></div>
+              <div class="kb-seg" data-seg="fit"><button type="button" data-v="contain" title="Whole picture, rest blurred">Fit</button><button type="button" data-v="cover" title="Picture fills everything, edges are cropped">Fill</button></div>
+            </div>
+            </div>
+            <div class="kb-pmvg-group">
+              <div class="kb-pmvg-grouphead"><b>Seams and edges</b><small>Where clips meet and the rim of the picture</small></div>
             <span class="kb-lab-t">Soft seams <small>– the line between the clips of a split screen is soft instead of sharp</small></span>
             <div class="kb-pmvg-opts">
               ${sw("soft", "Soften the seams", "No sharp lines between the fields: the seam is smeared softly (the clips don't overlap)")}
@@ -396,15 +439,12 @@ export function render(main) {
             <div class="kb-pmvg-sound" data-edgebox>
               <label class="kb-pmvg-range"><span>${icon("sliders")}Strength</span><input type="range" min="0" max="100" step="5" data-r="edgeAmt" aria-label="Strength of the rim effect"><output data-ro="edgeAmt"></output></label>
             </div>
-            <div class="kb-pmvg-opts">
-              ${sw("smooth", "Smooth scaling", "Clips are scaled with the best quality – less pixelated and jagged, a bit more work for the computer")}
-              ${sw("lookEven", "Even out brightness", "Clips that are too dark get brightened, too bright ones toned down – looks all of a piece")}
-              ${LOOK_FX.map(fxSw).join("")}
             </div>
-            <span class="kb-lab-t">Picture <small>– “Fit” shows the whole clip, “Fill” crops it to fill the frame</small></span>
-            <div class="kb-pmvg-row">
-              <div class="kb-seg" data-seg="format"><button type="button" data-v="16:9">16:9 landscape</button><button type="button" data-v="9:16">9:16 portrait</button></div>
-              <div class="kb-seg" data-seg="fit"><button type="button" data-v="contain" title="Whole picture, rest blurred">Fit</button><button type="button" data-v="cover" title="Picture fills everything, edges are cropped">Fill</button></div>
+            <div class="kb-pmvg-group">
+              <div class="kb-pmvg-grouphead"><b>Quality</b></div>
+              <div class="kb-pmvg-opts">
+              ${sw("smooth", "Smooth scaling", "Clips are scaled with the best quality – less pixelated and jagged, a bit more work for the computer")}
+              </div>
             </div>
           </div>
         </div>
@@ -450,16 +490,22 @@ export function render(main) {
         <div class="kb-pmvg-sec" data-sec="out">
           ${secHead("out")}
           <div class="kb-pmvg-pane" id="pmvg-pane-out" data-pane="out">
+            <div class="kb-pmvg-group">
+              <div class="kb-pmvg-grouphead"><b>Title cards</b><small>Intro and outro</small></div>
             <div class="kb-pmvg-opts">
               ${sw("intro", "Intro", "Title card at the start: your title slams in, comic-SFX style")}
               ${sw("outro", "Outro", "Credits at the end: the picture fades dark, title and number of clips")}
             </div>
             <input class="kb-field" data-title placeholder="Title for intro/outro – empty = song name" value="${esc(S.title)}">
+            </div>
+            <div class="kb-pmvg-group">
+              <div class="kb-pmvg-grouphead"><b>Recording</b><small>Saves the result as a video</small></div>
             <div class="kb-pmvg-opts">
               ${sw("record", "Record", "Saves the result as a video file (WebM) you can download")}
             </div>
             <span class="kb-lab-t">Recording quality</span>
             <div class="kb-seg" data-seg="quality"><button type="button" data-v="720">720p</button><button type="button" data-v="1080">1080p</button></div>
+            </div>
           </div>
         </div>
       </section>
@@ -545,7 +591,8 @@ export function render(main) {
     const tabSum = {
       cut: `${CUTS.find(([v]) => v === S.cut)[1]} · ${lays} ${lays === 1 ? "layout" : "layouts"}`,
       fx: `${fxOn} on`,
-      look: `${look} · ${S.format}`,
+      look: look,
+      frame: `${S.format === "window" ? "window shape" : S.format} · ${S.fit === "cover" ? "fill" : "fit"}${S.soft ? " · soft seams" : ""}`,
       sound: `Song ${S.songVol} · Clips ${S.fx.voice ? S.clipVol : "off"}`,
       fs: S.fsOn ? `${S.fsPace === "auto" ? "follows the song" : S.fsPace} · ${S.fsSize === "auto" ? "auto size" : S.fsSize}` : "off",
       out: [S.intro && "Intro", S.outro && "Outro", S.record && "Recording"].filter(Boolean).join(" · ") || "live only",
