@@ -1,4 +1,4 @@
-# PMV Generator – web version
+# PMV Generator – web version (2.25.1)
 
 Pick a song and a folder of clips – on every beat it cuts to the next one: split-screen layouts like real PMVs, effects on cuts, beats and drops, beat-synced speed ramps and clip audio. It runs live in the browser and can record the result as a video. It can also analyze an existing PMV and rebuild it with your own clips.
 
@@ -33,6 +33,10 @@ Everything runs locally in your browser – the author never receives, sees, sto
 4. **Go**: runs as a fullscreen show (Space pause, F fullscreen, Esc stop; with several songs N / P or the buttons in the bar skip). The bar and the mouse pointer disappear after 2.5 s without movement; **H** hides the bar for good (H again brings it back). **I** shows which clips are on screen (file, size, playing / loading / black picture) and which had to be skipped and why – clips the browser can't decode are left out instead of showing a black field. 4K clips run smoothly: the picture analysis runs in the background and every clip frame reaches the screen, also on 144/240 Hz monitors. With **Record** you get a WebM video to download – the duration is written into the file right in the browser, so players show the length and can seek.
 
    **My settings** saves everything about clips, cutting, effects, look and sound under a name and loads it again (kept in this browser); **Export** / **Import** move it as a file – also between the web version and the Stash plugin.
+
+   **Funscript** (optional): builds a script for The Handy from the song and plays it with the PMV – enter your connection key under Funscript (kept in this browser only).
+
+   **Soften the seams** (Look): in a split screen the line between the clips is soft instead of sharp.
 
 The clips you add are kept only while the page is open – after a reload, add the folder again (your folder choice and all settings are remembered).
 

@@ -7,6 +7,8 @@
 import { esc, icon, toast, errorToast, fmtDuration, fmtBytes, fmtNum, store, promptDialog, confirmDialog } from "../ui.js";
 import * as lib from "../library.js";
 import { fixWebmDuration } from "../webmfix.js";
+import { buildFunscript, FS_DEFAULTS } from "../funscriptgen.js";
+import { attachHandy, getHandy, interactiveConfig, saveInteractiveConfig } from "../interactive.js";
 import { analyzeFile, analyzeBuffer, sliceBuffer, songFromFrames, rescale, shift } from "../beats.js";
 import { scanPmv } from "../pmvscan.js";
 import { analyzeAsync, spotScore, matchDist, isCut } from "../pmvsmart.js";
@@ -33,6 +35,7 @@ function fmtTime(sec) {
 }
 
 const DEFAULTS = {
+  ...FS_DEFAULTS, // the funscript for The Handy (fsOn, fsPace, fsSize, fsWhere, fsStyle, fsRests, fsAccent, fsSpeed)
   glass: true, // liquid glass look (switch at the top right)
   mode: "song", // song = your own song(s), plex = music from Plex, tpl = use a PMV as template
   shuffle: false, // several songs: shuffled
@@ -43,18 +46,33 @@ const DEFAULTS = {
   source: "scene", // scene = videos, image = images, both
   folders: [], // [{ id, path }] – empty = all folders
   shape: "all", // clip shape: all | portrait | landscape
+  layoutShape: {}, // clip shape per layout (layout id → all | portrait | landscape), missing = all
   bestSpots: true, // best moments instead of random
   cleanCuts: true, // a clip's start has no scene change in the first seconds (it would cut by itself)
   smartCrop: true, // crop follows what matters
   variety: true, // same clip not shortly after itself
+  sequenced: false, // clips come from the part of their scene that matches how far the song is (start → start, end → end)
   matchCut: true, // pick the best-matching clip at each cut
   cut: "auto",
   bars: true, // cuts on the bar's beats, layouts change where a phrase starts (not just "every 4th beat")
+  reveal: false, // the opening: the clip sits small in the middle (rounded corners), grows until the first drop, then the layouts start
+  scroll: false, // in 3-way layouts the middle clip stays longer while the side clips scroll up or down like a feed
   layouts: { full: true, kaleido: true, duo: true, trim: true, tri: true, quad: true },
   // Effects: a calm start – zoom-in entry, flash, zoom pulse and RGB split; the rest is opt-in
   fx: { flash: true, zoom: true, shake: false, glitch: false, stutter: false, hue: false, rgb: true, echo: false, tunnel: false, invert: false, whip: false, zoomin: true, speed: false, voice: true, vhs: false, strobe: false, text: false, kenburns: true, lines: true },
   words: "",
-  look: "none", // color look: none | warm | pink | cold | bw | noir | vivid
+  look: "none", // color look: none | warm | pink | cold | bw | noir | vivid | custom
+  lookAmt: 100, // strength of the look (%)
+  lookColor: "#ff4d94", // the tint of the "custom" look
+  bright: 0, // smooth extra brightness (%)
+  soft: false, // soft seams: the fields of a split screen blend into each other
+  softAmt: 50, // how wide the blend is (%)
+  edge: "off", // rim of the picture: off | blur | motion | lens
+  edgeAmt: 50, // how strong / how far in (%)
+  smooth: true, // clips scaled smoothly (less pixelated)
+  pulseAmt: 100, // zoom pulse strength (%)
+  pulseOn: "beat", // zoom pulse on: beat | 2 (every other beat) | bar
+  pace: "normal", // automatic cuts: slow | normal | fast
   lookEven: true, // even out clip brightness
   songVol: 100, // song volume (%)
   clipVol: 50, // clip audio volume (%)
@@ -74,7 +92,7 @@ const FX = {
   flash: ["Flash", "Bright flash on cuts and drops"],
   zoom: ["Zoom pulse", "The picture pumps on every beat"],
   whip: ["Transitions", "New clips whip into the field with motion blur"],
-  zoomin: ["Zoom-in entry", "New clips zoom into the picture fast – alternating in and out"],
+  zoomin: ["Zoom-in entry", "New clips zoom into the picture fast – always zooming in, alternating strong and soft"],
   speed: ["Speed ramps", "Slow motion in calm parts, faster when it gets loud, a burst on drops"],
   voice: ["Clip audio", "Mix in the clips' original audio – only on drops or all the time"],
   rgb: ["RGB split", "Red and cyan tear apart – really hard on drops"],
@@ -106,6 +124,7 @@ const LOOKS = [
   ["vivid", "Vivid"],
   ["bw", "Black & white"],
   ["noir", "Noir"],
+  ["custom", "Own color"],
 ];
 // Moods: set layouts, cutting and effects in one go
 const PRESETS = {
@@ -125,6 +144,7 @@ const SECTIONS = [
   ["fx", "Effects", "What happens on cuts, beats and drops"],
   ["look", "Look & picture", "Colors, format and how clips fill the frame"],
   ["sound", "Sound", "Song and clip volume"],
+  ["fs", "Funscript", "A script for The Handy that follows the song"],
   ["out", "Output", "Intro, outro and recording"],
 ];
 const CHEVRON = `<svg class="kb-pmvg-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -293,6 +313,7 @@ export function render(main) {
           ${sw("cleanCuts", "Clean cuts", "With best moments: a clip starts where its scene runs on for the next few seconds – no hidden cut inside the clip that jumps to another scene by itself")}
           ${sw("smartCrop", "Smart crop", "The crop follows what matters in the clip instead of sticking to the center")}
           ${sw("matchCut", "Match cuts", "At each cut, the clip that best matches the previous one in color, brightness and composition comes next")}
+          ${sw("sequenced", "Follow the scenes' timeline", "A clip comes from the part of its scene that matches how far the song is: the start of the song uses the beginnings of the scenes, the end of the song their endings (a song of known length only)")}
           ${sw("variety", "Variety", "The same clip doesn't come up again shortly after")}
         </div>
       </section>
@@ -311,11 +332,19 @@ export function render(main) {
           <div class="kb-pmvg-pane" id="pmvg-pane-cut" data-pane="cut">
             <span class="kb-lab-t">When to cut</span>
             <div class="kb-seg" data-seg="cut">${CUTS.map(([v, l, t]) => `<button type="button" data-v="${v}" title="${esc(t)}">${l}</button>`).join("")}</div>
+            <div data-pacebox>
+              <span class="kb-lab-t">Pace <small>– how fast “Automatic” cuts</small></span>
+              <div class="kb-seg" data-seg="pace"><button type="button" data-v="slow" title="Calm: every 8 beats · medium: every 4 · loud: every 2">Slow</button><button type="button" data-v="normal" title="Calm: every 4 beats · medium: every 2 · loud: every beat">Normal</button><button type="button" data-v="fast" title="Calm: every 2 beats · medium and loud: every beat">Fast</button></div>
+            </div>
             <div class="kb-pmvg-opts">
+              ${sw("reveal", "Reveal opening", "The first clip sits small in the middle with rounded corners and slowly grows – at the first drop the picture opens up into the layouts (songs with a known length; not with templates)")}
+              ${sw("scroll", "Scrolling sides", "In 3-way layouts the middle clip stays longer while the clips at the sides scroll up or down, like swiping through a feed (needs the 3-way layouts)")}
               ${sw("bars", "Bars and phrases", "Finds the \"one\" of each bar and where a phrase begins: cuts land on the strong beats, split screens change at the start of a phrase")}
             </div>
             <span class="kb-lab-t">Layouts <small>– change to the beat, the louder the more fields</small></span>
             <div class="kb-chips kb-pmvg-layouts" data-layouts>${Object.entries(LAYOUTS).map(([k, l]) => `<button type="button" class="kb-chip" data-l="${k}" title="${esc(l.hint)}">${layoutIcon(k)}${l.name}</button>`).join("")}</div>
+            <span class="kb-lab-t">Clip shape per layout <small>– e.g. landscape clips only in full screen, portrait only in 3-way (set “Clip shape” in What to “All”)</small></span>
+            <div class="kb-pmvg-lshape" data-lshape>${Object.entries(LAYOUTS).map(([k, l]) => `<label class="kb-pmvg-lsrow" data-lsrow="${k}"><span>${layoutIcon(k)}${l.name}</span><select class="kb-field" data-ls="${k}"><option value="all">All</option><option value="landscape">Landscape only</option><option value="portrait">Portrait only</option></select></label>`).join("")}</div>
             <span class="kb-lab-t">Fields in 2-/3-way layouts</span>
             <div class="kb-seg" data-seg="split"><button type="button" data-v="cols" title="Columns – also in portrait format">side by side</button><button type="button" data-v="rows" title="Rows">stacked</button></div>
             <p class="kb-hint kb-pmvg-tip" data-tip hidden></p>
@@ -325,6 +354,13 @@ export function render(main) {
         <div class="kb-pmvg-sec" data-sec="fx">
           ${secHead("fx")}
           <div class="kb-pmvg-pane" id="pmvg-pane-fx" data-pane="fx">
+            <div class="kb-pmvg-group" data-pulsebox>
+              <div class="kb-pmvg-grouphead"><b>Zoom pulse</b><small>How strong and on which beats the picture pumps</small></div>
+              <div class="kb-pmvg-sound">
+                <label class="kb-pmvg-range"><span>${icon("sliders")}Strength</span><input type="range" min="0" max="100" step="5" data-r="pulseAmt" aria-label="Zoom pulse strength"><output data-ro="pulseAmt"></output></label>
+              </div>
+              <div class="kb-seg" data-seg="pulseOn"><button type="button" data-v="beat" title="On every beat">Every beat</button><button type="button" data-v="2" title="On every other beat">Every 2nd</button><button type="button" data-v="bar" title="Only on the first beat of each bar">Each bar</button></div>
+            </div>
             ${FX_GROUPS.map(([name, sub, keys]) => `
               <div class="kb-pmvg-group">
                 <div class="kb-pmvg-grouphead"><b>${name}</b>${sub ? `<small>${sub}</small>` : ""}<span class="kb-spacer"></span>
@@ -340,7 +376,28 @@ export function render(main) {
           <div class="kb-pmvg-pane" id="pmvg-pane-look" data-pane="look">
             <span class="kb-lab-t">Color look <small>– all clips in the same color mood</small></span>
             <div class="kb-seg kb-pmvg-looks" data-seg="look">${LOOKS.map(([v, l]) => `<button type="button" data-v="${v}"><i class="kb-pmvg-lookdot is-${v}"></i>${l}</button>`).join("")}</div>
+            <div class="kb-pmvg-sound" data-lookbox>
+              <label class="kb-pmvg-range"><span>${icon("sliders")}Strength</span><input type="range" min="0" max="100" step="5" data-r="lookAmt" aria-label="Strength of the color look"><output data-ro="lookAmt"></output></label>
+              <label class="kb-pmvg-range" data-colorrow><span>${icon("image")}Color</span><input type="color" class="kb-pmvg-color" data-sel="lookColor" aria-label="Color of your own look"></label>
+            </div>
+            <span class="kb-lab-t">Brighter <small>– lifts the mid-tones smoothly, without burning out the highlights</small></span>
+            <div class="kb-pmvg-sound">
+              <label class="kb-pmvg-range"><span>${icon("eye")}Brightness</span><input type="range" min="0" max="100" step="5" data-r="bright" aria-label="Brightness"><output data-ro="bright"></output></label>
+            </div>
+            <span class="kb-lab-t">Soft seams <small>– the line between the clips of a split screen is soft instead of sharp</small></span>
             <div class="kb-pmvg-opts">
+              ${sw("soft", "Soften the seams", "No sharp lines between the fields: the seam is smeared softly (the clips don't overlap)")}
+            </div>
+            <div class="kb-pmvg-sound" data-softbox>
+              <label class="kb-pmvg-range"><span>${icon("sliders")}Softness</span><input type="range" min="0" max="100" step="5" data-r="softAmt" aria-label="How soft the seams are"><output data-ro="softAmt"></output></label>
+            </div>
+            <span class="kb-lab-t">Rim of the picture <small>– only the edges, the middle stays sharp</small></span>
+            <div class="kb-seg" data-seg="edge"><button type="button" data-v="off">Off</button><button type="button" data-v="blur" title="Soft blur towards the edges">Blur</button><button type="button" data-v="motion" title="Light motion blur: streaks sideways at the left and right edge, up and down at the top and bottom">Motion</button><button type="button" data-v="lens" title="The edges look bent outwards, like through a lens">Lens</button></div>
+            <div class="kb-pmvg-sound" data-edgebox>
+              <label class="kb-pmvg-range"><span>${icon("sliders")}Strength</span><input type="range" min="0" max="100" step="5" data-r="edgeAmt" aria-label="Strength of the rim effect"><output data-ro="edgeAmt"></output></label>
+            </div>
+            <div class="kb-pmvg-opts">
+              ${sw("smooth", "Smooth scaling", "Clips are scaled with the best quality – less pixelated and jagged, a bit more work for the computer")}
               ${sw("lookEven", "Even out brightness", "Clips that are too dark get brightened, too bright ones toned down – looks all of a piece")}
               ${LOOK_FX.map(fxSw).join("")}
             </div>
@@ -365,6 +422,28 @@ export function render(main) {
             <div class="kb-seg" data-seg="voiceMode"><button type="button" data-v="drops" title="Fade in briefly on drops only – like the voice-overs in real PMVs">Only on drops</button><button type="button" data-v="always" title="The clips can be heard all the time, under the song">Always</button></div>
             <p class="kb-hint" data-voicehint></p>
             <p class="kb-hint">Both end up in the recording exactly like this. With several clips at once (split screen) they share the clip volume.</p>
+          </div>
+        </div>
+
+        <div class="kb-pmvg-sec" data-sec="fs">
+          ${secHead("fs")}
+          <div class="kb-pmvg-pane" id="pmvg-pane-fs" data-pane="fs">
+            <div class="kb-pmvg-opts">${sw("fsOn", "Play a funscript with the song", "Built from the song's beats and energy and played on The Handy together with the PMV (connection key: Stash UI → Settings → Interactive). Not with Plex or a live app – only with your own song files. After the show you can save it as a .funscript")}</div>
+            <div data-fsbox>
+              <span class="kb-lab-t">Handy connection key <small>– from handyfeeling.com / the Handy app; kept in this browser only</small></span>
+              <input class="kb-field" type="text" data-handykey placeholder="Connection key" autocomplete="off" spellcheck="false" aria-label="Handy connection key">
+              <span class="kb-lab-t">Pace <small>– strokes per beat</small></span>
+              <div class="kb-seg" data-seg="fsPace"><button type="button" data-v="auto" title="Calm parts slow, loud parts and drops fast">Follow the song</button><button type="button" data-v="slow" title="One stroke every 2 beats">Slow</button><button type="button" data-v="normal" title="One stroke per beat">Normal</button><button type="button" data-v="fast" title="Two strokes per beat">Fast</button></div>
+              <span class="kb-lab-t">Stroke size</span>
+              <div class="kb-seg" data-seg="fsSize"><button type="button" data-v="auto" title="Louder = bigger strokes">Follow the song</button><button type="button" data-v="small">Small</button><button type="button" data-v="medium">Medium</button><button type="button" data-v="large">Large</button><button type="button" data-v="full" title="The whole length, 0–100">Full</button></div>
+              <span class="kb-lab-t">Where on the stroke</span>
+              <div class="kb-seg" data-seg="fsWhere"><button type="button" data-v="low" title="Strokes in the lower part">Low</button><button type="button" data-v="mid">Middle</button><button type="button" data-v="high" title="Strokes in the upper part">High</button></div>
+              <span class="kb-lab-t">Style</span>
+              <div class="kb-seg" data-seg="fsStyle"><button type="button" data-v="sharp" title="Straight lines from beat to beat">Sharp</button><button type="button" data-v="smooth" title="Rounded, flowing strokes">Smooth</button></div>
+              <div class="kb-pmvg-opts">${sw("fsRests", "Gentle in calm parts", "Quiet passages get slow, small strokes")}${sw("fsAccent", "Accents", "A bigger stroke on the first beat of each bar and on drops")}</div>
+              <div class="kb-pmvg-sound"><label class="kb-pmvg-range"><span>${icon("sliders")}Top speed</span><input type="range" min="100" max="600" step="25" data-r="fsSpeed" aria-label="Top speed of the script"><output data-ro="fsSpeed"></output></label></div>
+              <p class="kb-hint">Top speed limits how fast the device is asked to move (units per second) – fast strokes get smaller instead. The script starts with the song; if it runs early or late, Stash UI's sync offset (Settings → Interactive) applies.</p>
+            </div>
           </div>
         </div>
 
@@ -415,6 +494,17 @@ export function render(main) {
       seg.querySelectorAll("[data-v]").forEach((b) => b.classList.toggle("is-on", String(S[seg.dataset.seg]) === b.dataset.v));
     });
     main.querySelectorAll("[data-layouts] [data-l]").forEach((b) => b.classList.toggle("is-on", !!S.layouts[b.dataset.l]));
+    main.querySelectorAll("[data-lsrow]").forEach((r) => {
+      r.hidden = !S.layouts[r.dataset.lsrow];
+      r.querySelector("select").value = (S.layoutShape || {})[r.dataset.lsrow] || "all";
+    });
+    $("[data-pacebox]").hidden = S.cut !== "auto";
+    $("[data-colorrow]").hidden = S.look !== "custom";
+    $("[data-lookbox]").hidden = S.look === "none";
+    $("[data-edgebox]").hidden = S.edge === "off";
+    $("[data-softbox]").hidden = !S.soft;
+    $("[data-pulsebox]").hidden = !S.fx.zoom;
+    $("[data-fsbox]").hidden = !S.fsOn;
     main.querySelectorAll("[data-t]").forEach((c) => (c.checked = !!getPath(S, c.dataset.t)));
     main.querySelectorAll("[data-all]").forEach((b) => {
       const on = b.dataset.all.split(",").every((k) => S.fx[k]);
@@ -457,10 +547,11 @@ export function render(main) {
       fx: `${fxOn} on`,
       look: `${look} · ${S.format}`,
       sound: `Song ${S.songVol} · Clips ${S.fx.voice ? S.clipVol : "off"}`,
+      fs: S.fsOn ? `${S.fsPace === "auto" ? "follows the song" : S.fsPace} · ${S.fsSize === "auto" ? "auto size" : S.fsSize}` : "off",
       out: [S.intro && "Intro", S.outro && "Outro", S.record && "Recording"].filter(Boolean).join(" · ") || "live only",
     };
     main.querySelectorAll("[data-tabsum]").forEach((s) => (s.textContent = tabSum[s.dataset.tabsum]));
-    const clipOpts = [S.bestSpots && "best moments", S.cleanCuts && "clean cuts", S.smartCrop && "smart crop", S.matchCut && "match cuts", S.variety && "variety"].filter(Boolean);
+    const clipOpts = [S.bestSpots && "best moments", S.cleanCuts && "clean cuts", S.smartCrop && "smart crop", S.matchCut && "match cuts", S.sequenced && "scene timeline", S.variety && "variety"].filter(Boolean);
     const src = { scene: "Videos", image: "Images", both: "Videos + images" }[S.source];
     const where = S.folders.length ? `from ${S.folders.length === 1 ? "1 folder" : S.folders.length + " folders"}` : "from all folders";
     $("[data-sum]").innerHTML = [
@@ -469,6 +560,7 @@ export function render(main) {
       `<li><b>Cutting</b>${esc(tabSum.cut)}</li>`,
       `<li><b>Effects</b>${fxOn} on${S.look !== "none" ? " · look " + esc(look) : ""}</li>`,
       `<li><b>Sound</b>Song ${S.songVol} % · clips ${S.fx.voice ? `${S.clipVol} %, ${S.voiceMode === "always" ? "always" : "only on drops"}` : "off"}</li>`,
+      S.fsOn ? `<li><b>Funscript</b>${esc(tabSum.fs)}</li>` : "",
       `<li><b>Output</b>${esc(S.format)} · ${esc(tabSum.out)}${S.record ? " · " + S.quality + "p" : ""}</li>`,
     ].join("");
   }
@@ -532,6 +624,14 @@ export function render(main) {
       toast(`Mood “${P.name}”`, "ok");
     }
   });
+  main.addEventListener("change", (e) => {
+    const sel = e.target.closest("[data-ls]");
+    if (!sel) return;
+    S.layoutShape = Object.assign({}, S.layoutShape);
+    if (sel.value === "all") delete S.layoutShape[sel.dataset.ls];
+    else S.layoutShape[sel.dataset.ls] = sel.value;
+    save();
+  });
   $("[data-words]").addEventListener("input", (e) => {
     S.words = e.target.value;
     save();
@@ -542,6 +642,13 @@ export function render(main) {
     S[r.dataset.r] = Number(r.value);
     save();
     paintSegs();
+  });
+  // The Handy's connection key (the web version keeps it in this browser)
+  interactiveConfig().then((c) => {
+    const f = main.querySelector("[data-handykey]");
+    if (!f) return;
+    f.value = c.handyKey || "";
+    f.addEventListener("change", () => saveInteractiveConfig({ handyKey: f.value.trim() }));
   });
   $("[data-title]").addEventListener("input", (e) => {
     S.title = e.target.value;
@@ -1358,9 +1465,8 @@ class Generator {
     this.ti = 0;
     this.log = []; // sequence (cuts, layouts) – readable on the stage element for tests
     this.dir = S.split;
-    const long = S.quality === 1080 ? 1920 : 1280;
-    const short = S.quality === 1080 ? 1080 : 720;
-    [this.W, this.H] = S.format === "9:16" ? [short, long] : [long, short];
+    [this.W, this.H] = this.sizeFor();
+    this.prepShape = { landscape: 0, portrait: 0 }; // clips being prepared per shape (clip shape per layout)
     this.sources = [];
     this.srcIdx = 0;
     this.ready = [];
@@ -1372,6 +1478,11 @@ class Generator {
     this.layouts = Object.keys(LAYOUTS).filter((k) => S.layouts[k]);
     if (!this.layouts.length) this.layouts = ["full"];
     this.layout = null;
+    this.leave = {}; // scroll cuts: group → { m: the clip on its way out, t, dir }
+    this.scrollDir = 0; // -1 up, 1 down: the sides scroll in this layout phase (0 = no)
+    this.sideN = 0;
+    this.revealing = false;
+    this.reveal = S.reveal && !this.tpl && !this.music && this.song && !this.song.live && Array.isArray(this.song.energy) && this.song.beats && this.song.beats.length > 16 ? this.makeReveal() : null;
     this.slots = [];
     this.groups = []; // media per group (field or mirrored pair of fields)
     this.cutT = [];
@@ -1402,7 +1513,7 @@ class Generator {
         <canvas class="kb-pmvg-canvas" width="${this.W}" height="${this.H}"></canvas>
         <div class="kb-pmvg-pool" aria-hidden="true"></div>
         <div class="kb-pmvg-hud">
-          ${this.S.record ? '<span class="kb-pmvg-rec" title="Recording">REC</span>' : ""}
+          ${this.S.record ? '<span class="kb-pmvg-rec" title="Recording in real time – let the show run to the end, stopping early ends the video there">REC</span>' : ""}
           ${this.music && this.music.type === "follow" ? '<span class="kb-pmvg-plex" title="Follows what plays on Plex">Plex</span>' : ""}
           <b data-h="name">${esc(this.song.name)}</b>${this.music && this.music.type === "list" ? `<span data-h="track"></span>` : ""}<span data-h="bpm">${Math.round(this.song.bpm)} BPM</span><span data-h="time">0:00 / ${fmtDuration(this.song.duration)}</span><span data-h="cuts">0 cuts</span>
           <span class="kb-spacer"></span>
@@ -1616,7 +1727,7 @@ class Generator {
     console.error("[PMV Generator]", e);
     this.say("");
     this.stopEverything();
-    this.showEnd(null, e.message || String(e));
+    this.showEnd(null, e.message || String(e), false, e.details, e.slow);
   }
 
   // ---------- Clips ----------
@@ -1638,12 +1749,21 @@ class Generator {
     this.srcIdx = 0;
   }
 
-  async nextSource() {
+  async nextSource(st = 0, want = null) {
     // Several clips are prepared in parallel – fetch new ones only once
     for (let tries = 0; ; tries++) {
       while (this.srcIdx >= this.sources.length) {
         this.fetching = this.fetching || this.fetchSources().finally(() => (this.fetching = null));
         await this.fetching;
+      }
+      // A shape is short (per-layout clip shape): take a source of that shape that is already known
+      if (want) {
+        const fits = (x) => (x.w || (x.item && x.item.w)) && (x.h || (x.item && x.item.h)) && !(this.badKeys && this.badKeys.has(x.key)) && (want === "portrait" ? (x.h || x.item.h) > (x.w || x.item.w) : (x.w || x.item.w) >= (x.h || x.item.h));
+        // (new ones first, then not shown recently; with a small selection a repeat is better than the wrong shape)
+        let k = this.sources.findIndex((x, n) => n >= this.srcIdx && fits(x) && !this.isRecent(x));
+        if (k < 0) k = this.sources.findIndex((x) => fits(x) && !this.isRecent(x));
+        if (k < 0) k = this.sources.findIndex(fits);
+        if (k >= 0) return this.sources[k];
       }
       const s = this.sources[this.srcIdx++];
       if (this.badKeys && this.badKeys.has(s.key) && tries < this.sources.length) continue; // failed before
@@ -1671,9 +1791,14 @@ class Generator {
     // Enough supply for a layout change with four new fields
     // (match cuts need a bit more choice)
     // At most 3 at once: each one decodes and seeks its video – with 4K several at once choke the decoder
-    while (!this.done && this.ready.length + this.preparing < (this.S.matchCut ? 8 : 6) && this.preparing < 3) {
+    while (!this.done && this.preparing < 3) {
+      const want = this.shapeShort();
+      const cap = this.S.matchCut ? 8 : 6;
+      const have = this.ready.length + this.preparing;
+      if (have >= cap && !(want && have < (this.S.matchCut ? 14 : 12))) break;
       this.preparing++;
-      this.prepareOne()
+      if (want) this.prepShape[want]++;
+      this.prepareOne(want)
         .then((m) => {
           if (this.done) return this.release(m);
           this.ready.push(m);
@@ -1682,13 +1807,24 @@ class Generator {
         .catch((e) => !e.skip && this.bad++) // "doesn't fit the filters" is not an error
         .finally(() => {
           this.preparing--;
+          if (want) this.prepShape[want]--;
           if (!this.done && this.bad < 12) setTimeout(() => this.fillPool(), this.bad ? 200 : 0);
         });
     }
   }
 
-  async prepareOne() {
-    const s = await this.nextSource();
+  // Per-layout clip shape: which shape (landscape / portrait) the ready clips are short of (null = none)
+  shapeShort() {
+    const rules = this.S.layoutShape || {};
+    const need = [...new Set(this.layouts.map((k) => rules[k]).filter((v) => v === "landscape" || v === "portrait"))];
+    if (!need.length) return null;
+    const have = (sh) => this.ready.filter((m) => (sh === "portrait" ? m.h > m.w : m.w >= m.h)).length + this.prepShape[sh];
+    need.sort((a, b) => have(a) - have(b));
+    return have(need[0]) < 5 ? need[0] : null;
+  }
+
+  async prepareOne(want = null) {
+    const s = await this.nextSource(0, want);
     try {
       return await this.prepareFrom(s);
     } catch (e) {
@@ -1727,7 +1863,17 @@ class Generator {
       if (!v.videoWidth || !v.videoHeight) throw Object.assign(new Error("no picture"), { why: "no picture – the browser can't decode this video (codec?)", unplayable: true });
       const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : s.dur;
       measured(s.item, v.videoWidth, v.videoHeight, dur, this.S);
-      const rand = () => (dur > 10 ? dur * 0.08 + Math.random() * Math.max(0, dur * 0.84 - 4) : 0);
+      // Follow the scenes' timeline: how far the song is = where in the scene the clip is taken from (± a window)
+      let seq = null;
+      if (this.S.sequenced && dur > 10 && this.song && this.song.duration > 0) {
+        const prog = Math.min(1, Math.max(0, this.now() / this.song.duration));
+        const half = Math.max(6, dur * 0.12);
+        const lo = Math.max(0, Math.min(prog * dur - half, dur - 6));
+        const hi = Math.min(dur - 3, Math.max(lo, prog * dur + half));
+        seq = { lo, hi };
+      }
+      const inSeq = (t) => !seq || (t >= seq.lo && t <= seq.hi);
+      const rand = () => (seq ? seq.lo + Math.random() * Math.max(0, seq.hi - seq.lo) : dur > 10 ? dur * 0.08 + Math.random() * Math.max(0, dur * 0.84 - 4) : 0);
       const seek = async (t) => {
         v.currentTime = t;
         await withTimeout(once(v, "seeked"), 8000);
@@ -1812,14 +1958,23 @@ class Generator {
   }
 
   // Take the best of the ready clips: shape fits the field (portrait into a narrow field etc.),
-  // match cut: looks like the clip that is leaving (out), variety: not the same clip again
-  takeMedia(aspect, out) {
+  // match cut: looks like the clip that is leaving (out), variety: not the same scene/performer
+  takeMedia(aspect, out, strict = false) {
     if (!this.ready.length) return null;
     let outSig = null;
     if (this.S.matchCut && out) outSig = out.live || out.sig; // (measured in the background, see trackFocus)
     let best = 0;
     let score = Infinity;
-    this.ready.slice(0, this.S.matchCut ? 8 : 5).forEach((m, i) => {
+    let cand = this.ready.map((m, i) => i);
+    // Shape per layout: only landscape / portrait clips in this layout (none ready → whatever there is)
+    const want = (this.S.layoutShape || {})[this.layout];
+    if (want === "landscape" || want === "portrait") {
+      const fit = cand.filter((i) => (want === "portrait" ? this.ready[i].h > this.ready[i].w : this.ready[i].w >= this.ready[i].h));
+      if (fit.length) cand = fit;
+      else if (strict) return null; // (a single field: better keep the clip than show the wrong shape)
+    }
+    cand.slice(0, this.S.matchCut ? 8 : 5).forEach((i) => {
+      const m = this.ready[i];
       let s = Math.abs(Math.log(m.w / m.h / aspect));
       if (outSig) s += 1.5 * matchDist(outSig, m.sig);
       s += this.varietyPenalty(m);
@@ -1831,7 +1986,7 @@ class Generator {
     const m = this.ready.splice(best, 1)[0];
     this.remember(m);
     m.shownAt = performance.now();
-    m.zoomDir = (this.zoomFlip = !this.zoomFlip) ? 1 : -1; // zoom-in entry: alternating in/out
+    m.zoomDir = (this.zoomFlip = !this.zoomFlip) ? 1 : -1; // zoom-in entry: alternating strong/soft (always zooming in)
     if (m.kind === "video") {
       m.el.playbackRate = this.rate || 1;
       m.el.play().catch(() => {});
@@ -1857,15 +2012,24 @@ class Generator {
     old.forEach((m) => m && !this.groups.includes(m) && this.release(m));
   }
 
-  cutGroup(gi, t) {
+  cutGroup(gi, t, opt) {
     const old = this.groups[gi];
-    const m = this.takeMedia(aspectOfGroup(this.slots, gi), old);
+    const m = this.takeMedia(aspectOfGroup(this.slots, gi), old, true);
     if (!m) return false; // nothing ready yet → the field keeps running
     this.groups[gi] = m;
     this.cutT[gi] = t;
-    this.dropUnused([old]);
+    if (opt && opt.scroll && old && old !== m) {
+      // the old clip scrolls out: it keeps playing a moment longer
+      const prev = this.leave[gi];
+      this.leave[gi] = { m: old, t, dir: opt.scroll };
+      if (prev && prev.m !== old) this.dropUnused([prev.m]);
+      setTimeout(() => !this.groups.includes(old) && this.release(old), 600);
+    } else {
+      delete this.leave[gi];
+      this.dropUnused([old]);
+    }
     this.cuts++;
-    this.log.push({ t, type: "cut", group: gi });
+    this.log.push({ t, type: "cut", group: gi, key: m.key, scroll: (opt && opt.scroll) || 0 });
     this.fillPool();
     this.syncVoices();
     return true;
@@ -1873,6 +2037,8 @@ class Generator {
 
   setLayout(id, t, dir) {
     if (dir) this.dir = dir;
+    Object.values(this.leave).forEach((lv) => lv.m && this.release(lv.m)); // (scrolling clips that are still on their way out)
+    this.leave = {};
     const old = this.groups.slice();
     this.layout = id;
     this.slots = slotsFor(id, this.W, this.H, this.dir);
@@ -1881,7 +2047,7 @@ class Generator {
     for (let gi = 0; gi < n; gi++) {
       // New clips for all fields; if some are missing, old ones keep running
       const prev = old[gi % Math.max(1, old.length)] || null;
-      this.groups[gi] = this.takeMedia(aspectOfGroup(this.slots, gi), prev) || prev;
+      this.groups[gi] = this.takeMedia(aspectOfGroup(this.slots, gi), prev, !!prev) || prev;
       this.cutT[gi] = t;
     }
     this.cutT.length = n;
@@ -1900,16 +2066,44 @@ class Generator {
     return e > 0.6 ? 3 : e > 0.35 ? 2 : 1;
   }
 
+  layoutReady(id) {
+    const rule = (this.S.layoutShape || {})[id];
+    if (rule !== "landscape" && rule !== "portrait") return true;
+    const fit = this.ready.filter((m) => (rule === "portrait" ? m.h > m.w : m.w >= m.h)).length;
+    return fit >= LAYOUTS[id].groups;
+  }
+
   pickLayout(e, drop) {
     let want = this.levelFor(e, drop);
     if (want === 3 && e > 0.8 && Math.random() < 0.2) want = 4; // a 4-way now and then
     const dist = (k) => Math.abs(LAYOUTS[k].level - want);
     // Never the same layout again – otherwise the next best match (e.g. 4-way ↔ mirrored 3-way)
-    const cands = this.layouts.filter((k) => k !== this.layout || this.layouts.length === 1);
+    // (a layout with a clip-shape rule only opens when enough clips of that shape are ready)
+    const cands = this.layouts.filter((k) => (k !== this.layout || this.layouts.length === 1) && this.layoutReady(k));
+    if (!cands.length) return null;
     const min = Math.min(...cands.map(dist));
     const pool = cands.filter((k) => dist(k) === min);
     return pool[Math.floor(Math.random() * pool.length)];
   }
+  // Reveal opening: where it ends – the first drop (not in the first 5 s, and within a minute), else after 32 beats
+  makeReveal() {
+    const { beats, energy } = this.song;
+    let last = -99;
+    let endK = Math.min(32, beats.length - 1);
+    for (let k = 0; k < beats.length && beats[k] < 75; k++) {
+      const e = energy[k] || 0;
+      const prev = energy[k - 4] || 0;
+      if (e - prev > 0.35 && e > 0.6 && k - last >= 16) {
+        last = k;
+        if (beats[k] >= 5) {
+          endK = k;
+          break;
+        }
+      }
+    }
+    return { endK, endT: Math.max(2, beats[endK]), done: false };
+  }
+
   async start() {
     this.fillPool();
     // Wait until the first clips are ready (max. 20 s)
@@ -1917,7 +2111,7 @@ class Generator {
     while (this.ready.length < 3 && !this.done) {
       if (this.bad >= 12 || performance.now() - t0 > 20000) {
         if (this.ready.length) break;
-        throw new Error("No clips could be played. Choose other filters – the browser may not play videos in exotic formats directly.");
+        throw Object.assign(new Error("No clips could be played."), { details: (this.failed || []).slice(-8).reverse(), slow: !(this.failed || []).length });
       }
       await sleep(100);
     }
@@ -1947,13 +2141,68 @@ class Generator {
     } else {
       this.playSource(0);
       this.rebase();
+      this.fsStart();
     }
     this.paintTrack();
     const first = this.tpl && this.tpl.events.find((ev) => ev.type === "layout");
     if (first) this.setLayout(first.layout, 0, first.dir);
-    else this.setLayout(this.layouts.includes("full") ? "full" : this.layouts[0], 0);
+    else if (this.reveal) {
+      this.revealing = true;
+      this.setLayout("full", 0);
+    } else this.setLayout(this.layouts.includes("full") ? "full" : this.layouts[0], 0);
     this.loop = this.loop.bind(this);
     this.raf = requestAnimationFrame(this.loop);
+  }
+
+  // ---------- Funscript: built from the song, played on The Handy together with the show ----------
+
+  // A funscript for the current song (null when it can't be made); also kept for "Save funscript" at the end
+  fsBuild() {
+    this.fs = null;
+    if (!this.S.fsOn || !this.song || !this.song.beats || this.song.live) return null;
+    try {
+      this.fs = buildFunscript(this.song, this.bars, this.S);
+    } catch (e) {
+      console.warn("[PMV Generator] funscript", e);
+    }
+    return this.fs;
+  }
+  async fsStart() {
+    if (!this.S.fsOn || this.tpl || this.live || (this.music && this.music.type === "follow")) return;
+    const fs = this.fsBuild();
+    if (!fs) return;
+    this.fsClock = Object.assign(new EventTarget(), {
+      show: this,
+      get currentTime() {
+        return Math.max(0, this.show.pos());
+      },
+      get paused() {
+        return !!(this.show.paused || this.show.done);
+      },
+    });
+    let told = "";
+    this.fsHandy = attachHandy(this.fsClock, { paths: { funscript: "pmv" } }, {
+      getVariant: async () => this.fs,
+      onState: (h) => {
+        if (!h) return;
+        const st = h.state + (h.error || "");
+        if (st === told) return;
+        told = st;
+        if (h.state === "ready") toast("The Handy is ready – the funscript plays with the song", "ok");
+        else if (h.state === "error") toast("The Handy: " + h.error, "error");
+      },
+    });
+    getHandy().then((h) => h || toast("No Handy connection key – enter it under Funscript", "error")).catch(() => {});
+  }
+  fsEvent(type) {
+    if (this.fsClock) this.fsClock.dispatchEvent(new Event(type));
+  }
+  saveFunscript() {
+    if (!this.fs) return;
+    const blob = new Blob([JSON.stringify(this.fs)], { type: "application/json" });
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `${fileName(this.song.name)}.funscript` });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
 
   startRecorder(gain) {
@@ -2051,6 +2300,7 @@ class Generator {
   setSong(song) {
     this.song = song;
     this.setBars();
+    if (this.fsHandy && this.fsBuild()) this.fsHandy.setVariant(this.fs); // playlist: the new song gets its own script
     this.lastDrop = -99;
     this.h("name").textContent = song.name;
     this.h("bpm").textContent = `${Math.round(song.bpm)} BPM`;
@@ -2229,6 +2479,8 @@ class Generator {
       this.st.groups = this.groups;
       this.st.cutT = this.cutT;
       this.st.cutCount = this.cuts;
+      this.st.reveal = this.revealing ? { p: Math.max(0, Math.min(1, t / this.reveal.endT)) } : null;
+      this.st.leave = this.leave;
       this.comp.draw(this.st);
     }
     if (!this.hudT || performance.now() - this.hudT > 250) {
@@ -2246,21 +2498,41 @@ class Generator {
     this.bars = this.tpl ? null : songBars(this.S, this.song);
   }
 
+  // How hard beat k pumps the picture: louder = more; "every 2nd" / "each bar" leave out the others
+  pulseFor(k, e, bar, drop) {
+    const on = this.S.pulseOn;
+    if (!drop && ((on === "2" && k % 2) || (on === "bar" && !bar))) return 0;
+    return 0.03 + 0.07 * e + (drop ? 0.1 : 0);
+  }
+
+  // Direction: decide what happens on each beat
   onBeat(k, t) {
     const S = this.S;
     const beats = this.song.beats;
     const e = this.song.energy[k] || 0;
     const prev = this.song.energy[k - 4] || 0;
     // A drop counts once – otherwise the signal stays up for several beats in a row
-    const drop = e - prev > 0.35 && e > 0.6 && k - this.lastDrop >= 16;
+    let drop = e - prev > 0.35 && e > 0.6 && k - this.lastDrop >= 16;
+    // Reveal opening: ends at its beat – that counts as the drop (the picture opens up)
+    let revealEnds = false;
+    if (this.revealing && k >= this.reveal.endK) {
+      revealEnds = true;
+      this.revealing = false;
+      this.reveal.done = true;
+      drop = true;
+    }
     if (drop) this.lastDrop = k;
     const B = this.bars;
     const bar = B ? !!B.downbeat[k] : k % 4 === 0;
     const len = (beats[k + 1] || beats[k] + 0.5) - beats[k];
     const comp = this.comp;
     this.st.energy = e;
-    this.st.beatT = t;
-    this.st.beatAmt = 0.03 + 0.07 * e + (drop ? 0.1 : 0);
+    // The zoom pulse sits exactly on the beat (its time from the song, not from when it was noticed); the next beat is
+    // known too, so the pulse can ease in just before it
+    this.st.beatT = beats[k] != null ? beats[k] + (this.vOff || 0) : t;
+    this.st.beatAmt = this.pulseFor(k, e, bar, drop);
+    this.st.nextT = beats[k + 1] != null ? beats[k + 1] + (this.vOff || 0) : null;
+    this.st.nextAmt = beats[k + 1] != null ? this.pulseFor(k + 1, this.song.energy[k + 1] || 0, B ? !!B.downbeat[k + 1] : (k + 1) % 4 === 0, false) : 0;
 
     // Change layout: on drops right away; otherwise every 2 bars if the mood has changed
     // or – in loud parts – for variety. Calm parts stay calm.
@@ -2270,20 +2542,41 @@ class Generator {
     const due = B
       ? ((B.phrase[k] && k - this.layoutBeat >= this.layoutHold && (moodChanged || (want >= 3 && Math.random() < 0.6))) || (bar && moodChanged && k - this.layoutBeat >= 24))
       : bar && k - this.layoutBeat >= this.layoutHold && (moodChanged || (want >= 3 && Math.random() < 0.6));
+    let nextLayout = null;
     if (this.tpl) {
       // Cuts and layouts come from the template (applyEvent)
-    } else if (this.layouts.length > 1 && (drop || due)) {
-      this.setLayout(this.pickLayout(e, drop), t);
+    } else if (this.layouts.length > 1 && (drop || due) && !this.revealing && (nextLayout = this.pickLayout(e, drop))) {
+      this.setLayout(nextLayout, t);
       this.layoutBeat = k;
+      this.centerK = k;
+      // Scrolling sides: in a 3-way layout (not on a drop, not in the loudest parts) the middle clip stays and the sides scroll
+      this.scrollDir = S.scroll && !drop && e <= 0.9 && (this.layout === "tri" || this.layout === "trim") && Math.random() < 0.75 ? (Math.random() < 0.5 ? -1 : 1) : 0;
+      this.sideN = 0;
       this.layoutHold = drop ? 4 : 8; // after a drop, move on after just one bar
       this.lastCut = k;
       comp.flash(t, drop ? 0.9 : 0.35, drop ? "#ff3e8a" : "#fff");
     } else {
       // Within the layout: re-cut the fields in turn
-      const every = S.cut === "auto" ? (e > 0.72 ? 1 : e > 0.4 ? 2 : 4) : Number(S.cut);
+      if (revealEnds && this.layouts.length < 2) comp.flash(t, 0.9, "#ff3e8a"); // (a single layout: the window just opens up)
+      const PACE = { slow: [8, 4, 2], normal: [4, 2, 1], fast: [2, 1, 1] }[S.pace] || [4, 2, 1]; // calm · medium · loud
+      let every = S.cut === "auto" ? (e > 0.72 ? PACE[2] : e > 0.4 ? PACE[1] : PACE[0]) : Number(S.cut);
+      if (this.scrollDir) every = Math.max(2, every); // scrolling is slower than cutting
       // With bars the cuts sit on the bar's grid: every beat, beats 1 and 3, or only the "one" – not "N beats after the last cut"
       const onGrid = B && 4 % every === 0 ? B.pos[k] % every === 0 && k - this.lastCut >= Math.min(every, 2) : k - this.lastCut >= every;
-      if (onGrid || (every === 4 && bar && k - this.lastCut >= 2)) {
+      if (this.revealing) {
+        // Reveal opening: one clip only, it just grows – no cuts until the drop
+      } else if (this.scrollDir && (this.layout === "tri" || this.layout === "trim")) {
+        // The middle clip (group 1) runs for four bars; the sides (groups 0 and 2) scroll in turn
+        if (bar && k - (this.centerK ?? this.layoutBeat) >= 16) {
+          if (this.cutGroup(1, t)) {
+            this.centerK = k;
+            this.lastCut = k;
+          }
+        } else if (onGrid) {
+          const sides = this.layout === "tri" ? [0, 2] : [0];
+          if (this.cutGroup(sides[this.sideN++ % sides.length], t, { scroll: this.scrollDir })) this.lastCut = k;
+        }
+      } else if (onGrid || (every === 4 && bar && k - this.lastCut >= 2)) {
         const n = LAYOUTS[this.layout].groups;
         const gi = this.nextGroup % n;
         if (this.cutGroup(gi, t)) {
@@ -2456,12 +2749,14 @@ class Generator {
     b.innerHTML = icon(this.paused ? "play" : "pause");
     if (this.paused) {
       this.ac.suspend();
+      this.fsEvent("pause");
       if (this.mediaEl && this.song.media) this.mediaEl.pause();
       this.videos().forEach((m) => m.el.pause());
       if (this.rec && this.rec.state === "recording") this.rec.pause();
       this.say("Paused – Space continues");
     } else {
       this.ac.resume();
+      this.fsEvent("playing");
       if (this.mediaEl && this.song.media) this.mediaEl.play().catch(() => {});
       this.videos().forEach((m) => m.el.play().catch(() => {}));
       if (this.rec && this.rec.state === "paused") this.rec.resume();
@@ -2471,6 +2766,10 @@ class Generator {
 
   stopEverything() {
     this.done = true;
+    if (this.fsHandy) {
+      this.fsHandy.stop();
+      this.fsHandy = null;
+    }
     if (this.music && this.music.follow) this.music.follow.detach();
     cancelAnimationFrame(this.raf);
     try {
@@ -2511,20 +2810,32 @@ class Generator {
     this.showEnd(blob, null, early);
   }
 
-  showEnd(blob, error, early) {
+  // The clips that were skipped (name, file, why) – so you can see which ones don't work
+  failListHtml(list) {
+    return `<ul class="kb-pmvg-faillist">${list.map((f) => `<li><b>${esc(f.name)}</b>${f.file && f.file !== f.name ? ` <small>${esc(f.file)}</small>` : ""} – ${esc(f.why)}${f.n > 1 ? ` <small>×${f.n}</small>` : ""}</li>`).join("")}</ul>`;
+  }
+
+  showEnd(blob, error, early, details, slow) {
     const end = this.h("end");
     this.blob = blob;
     const url = blob ? URL.createObjectURL(blob) : null;
     this.blobUrl = url;
     end.hidden = false;
     end.innerHTML = error
-      ? `<div class="kb-pmvg-endcard"><h2>That didn't work</h2><p>${esc(error)}</p><div class="kb-card-acts"><button class="kb-btn" data-end="close">Back</button></div></div>`
+      ? `<div class="kb-pmvg-endcard"><h2>That didn't work</h2><p>${esc(error)}</p>
+          ${details && details.length ? `<p class="kb-hint">These clips were tried and skipped:</p>${this.failListHtml(details)}` : ""}
+          ${slow ? `<p class="kb-hint">Nothing was ready within 20 seconds – the clips load too slowly. Try a lower resolution (“Resolution up to”) or fewer clips from a slow drive.</p>` : ""}
+          ${details && details.length ? `<p class="kb-hint">Often it is the video's codec (HEVC / H.265, AV1 …): the browser can't decode it, so the clip stays black or is skipped. Re-encoding such files to H.264 helps – and generating the previews and sprites in Stash (Tasks → Generate) speeds clips up.</p>` : `<p class="kb-hint">Choose other filters – the browser may not play videos in exotic formats directly.</p>`}
+          <div class="kb-card-acts"><button class="kb-btn" data-end="close">Back</button></div></div>`
       : `<div class="kb-pmvg-endcard">
           <h2>${early ? "Stopped" : "Done!"}</h2>
           <p>${fmtDuration(this.length || 0)} · ${this.cuts} cuts · ${Math.round(this.song.bpm)} BPM${blob ? ` · ${fmtBytes(blob.size)}` : ""}</p>
+          ${early && blob && this.song.duration > 0 && this.length < this.song.duration - 2 ? `<p class="kb-hint">Stopped early – the video ends at ${fmtDuration(this.length || 0)} of ${fmtDuration(this.song.duration)}. The recording runs in real time, so let the show play to the end for the whole track.</p>` : ""}
+          ${this.failed && this.failed.length ? `<details class="kb-pmvg-skipped"><summary>${this.failed.length} ${this.failed.length === 1 ? "clip was" : "clips were"} skipped</summary>${this.failListHtml(this.failed.slice().reverse())}</details>` : ""}
           ${url ? `<video class="kb-pmvg-result" src="${url}" controls playsinline></video>` : ""}
           <div class="kb-card-acts">
             ${blob ? `<a class="kb-btn is-primary" data-end="file" href="${url}" download="${esc(fileName(this.song.name))}.webm">${icon("download")}Download</a>` : ""}
+            ${this.fs ? `<button class="kb-btn" data-end="fs" title="The funscript that played with this song">${icon("download")}Save funscript</button>` : ""}
             <button class="kb-btn" data-end="again">${icon("shuffle")}Again, reshuffled</button>
             <button class="kb-btn is-ghost" data-end="close">Close</button>
           </div>
@@ -2541,6 +2852,7 @@ class Generator {
         this.close();
         onClose(new Generator(song, S, onClose, tpl, music));
       }
+      if (a === "fs") this.saveFunscript();
     };
   }
 

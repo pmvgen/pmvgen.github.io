@@ -206,6 +206,8 @@
 .kb-plc-btn:hover { background: var(--bg-3); }
 .kb-plc-btn.is-on { border-color: var(--pink); color: var(--pink); background: rgba(255, 62, 138, .12); }
 .kb-plc-btn .kb-ic { width: 16px; height: 16px; }
+.kb-plc-btn.is-danger:hover { border-color: #d22c4a; color: #ff6b83; background: rgba(210, 44, 74, .14); }
+html.kb-glass .kb-plc-btn.is-danger:hover { background: rgba(210, 44, 74, .22); border-color: rgba(255, 107, 131, .6); }
 .kb-plc-btn:not(.is-on) .kb-dotmini { background: var(--faint); }
 .kb-plc-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .kb-plc-tags { margin-top: 12px; }
@@ -439,6 +441,9 @@
 .kb-pmvg-lookdot.is-vivid { background: conic-gradient(#ff3e8a, #ffd166, #5ee0a0, #5aa0ff, #ff3e8a); }
 .kb-pmvg-lookdot.is-bw { background: linear-gradient(90deg, #fff 50%, #111 50%); }
 .kb-pmvg-lookdot.is-noir { background: radial-gradient(#777, #000); }
+.kb-pmvg-lookdot.is-custom { background: conic-gradient(#ff3e8a, #b86bff, #5aa0ff, #5ee0a0, #ffd166, #ff3e8a); }
+.kb-pmvg-color { width: 44px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: none; cursor: pointer; }
+html.kb-glass .kb-pmvg-color { border-color: var(--glass-edge); border-radius: 10px; }
 .kb-pmvg-no { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 4px; color: var(--ink); font: 700 18px/1 var(--f-display); background: var(--pink); box-shadow: 2px 2px 0 var(--paper); }
 .kb-pmvg-drop {
   display: flex;
@@ -467,6 +472,8 @@
 .kb-pmvg-songhead span { color: var(--pink); font: 600 14px/1 var(--f-label); font-variant-numeric: tabular-nums; }
 .kb-pmvg-wave { display: block; width: 100%; height: 96px; border-radius: 4px; background: var(--base); }
 .kb-pmvg-tags { display: flex; flex-direction: column; gap: 8px; }
+/* The suggestion lists (position: absolute) hang below their field – they need a positioned parent, else they appear far down the page */
+.kb-pmvg-tags, .kb-pmvg-perfs { position: relative; }
 .kb-pmvg-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .kb-pmvg .kb-hint.is-warn { color: var(--danger); }
 .kb-pmvg .kb-set { padding: 0; border: 0; }
@@ -612,3 +619,16 @@
 .kb-pmvg-vrange .kb-field, .kb-pmvg-trim .kb-field { width: 86px; text-align: center; font-variant-numeric: tabular-nums; }
 .kb-pmvg-trim { margin-top: 10px; }
 html.kb-glass .kb-pmvg-fromvid { border-color: var(--glass-edge); background: var(--glass-shine), var(--glass); }
+
+/* Skipped clips (PMV end card, "No clips" error) */
+.kb-pmvg-faillist { margin: 0 0 12px; padding: 0 0 0 18px; max-height: 180px; overflow-y: auto; color: var(--text-2); font-size: 13px; }
+.kb-pmvg-faillist li { margin: 3px 0; overflow-wrap: anywhere; }
+.kb-pmvg-faillist small { color: var(--faint); }
+.kb-pmvg-skipped { margin: 0 0 12px; color: var(--text-2); }
+.kb-pmvg-skipped summary { cursor: pointer; }
+.kb-pmvg-lshape { display: grid; gap: 6px; margin-top: 6px; }
+.kb-pmvg-lsrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.kb-pmvg-lsrow[hidden] { display: none; }
+.kb-pmvg-lsrow > span { display: inline-flex; align-items: center; gap: 8px; }
+.kb-pmvg-lsrow select { width: auto; min-width: 150px; }
+html.kb-glass .kb-pmvg-lsrow select { background: rgba(255, 255, 255, .08); border-color: rgba(255, 255, 255, .25); }

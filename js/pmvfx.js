@@ -48,15 +48,22 @@ export const aspectOfGroup = (slots, g) => {
   return s.w / s.h;
 };
 
-// Color looks: a filter on each clip + a tint over the whole picture (soft-light)
+// Color looks: a filter on each clip + a tint over the whole picture (soft-light). Both scale with the strength (a: 0…1)
+const f3 = (x) => x.toFixed(3);
 export const LOOKS = {
-  none: { filter: "", tint: null },
-  warm: { filter: "sepia(.22) saturate(1.2) contrast(1.04)", tint: "rgba(255, 140, 60, .22)" },
-  pink: { filter: "saturate(1.15) contrast(1.05)", tint: "rgba(255, 62, 138, .3)" },
-  cold: { filter: "saturate(.85) contrast(1.06)", tint: "rgba(60, 140, 255, .26)" },
-  vivid: { filter: "saturate(1.7) contrast(1.12)", tint: null },
-  bw: { filter: "grayscale(1) contrast(1.15)", tint: null },
-  noir: { filter: "grayscale(1) contrast(1.5) brightness(.88)", tint: null, vignette: true },
+  none: { filter: () => "", tint: null },
+  warm: { filter: (a) => `sepia(${f3(0.22 * a)}) saturate(${f3(1 + 0.2 * a)}) contrast(${f3(1 + 0.04 * a)})`, tint: [255, 140, 60, 0.22] },
+  pink: { filter: (a) => `saturate(${f3(1 + 0.15 * a)}) contrast(${f3(1 + 0.05 * a)})`, tint: [255, 62, 138, 0.3] },
+  cold: { filter: (a) => `saturate(${f3(1 - 0.15 * a)}) contrast(${f3(1 + 0.06 * a)})`, tint: [60, 140, 255, 0.26] },
+  vivid: { filter: (a) => `saturate(${f3(1 + 0.7 * a)}) contrast(${f3(1 + 0.12 * a)})`, tint: null },
+  bw: { filter: (a) => `grayscale(${f3(a)}) contrast(${f3(1 + 0.15 * a)})`, tint: null },
+  noir: { filter: (a) => `grayscale(${f3(a)}) contrast(${f3(1 + 0.5 * a)}) brightness(${f3(1 - 0.12 * a)})`, tint: null, vignette: true },
+  custom: { filter: () => "", tint: null }, // your own color (S.lookColor)
+};
+const hexRgb = (h) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(h || ""));
+  const n = m ? parseInt(m[1], 16) : 0xff4d94;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 };
 
 export class Compositor {
@@ -70,6 +77,13 @@ export class Compositor {
     this.t = { flash: -9, flashA: 0, flashColor: "#fff", shake: -9, glitch: -9, rgb: -9, rgbAmt: 0, rgbDur: 0.1, invert: -9, tunnel: -9, tunnelDur: 0.5, strobe: -9, text: -9, word: "" };
     this.words = String(S.words || "").split(/[,;\n]+/).map((w) => w.trim()).filter(Boolean);
     this.look = LOOKS[S.look] || LOOKS.none;
+    // The look at its strength: the filter for each clip, the tint over everything
+    const la = Math.max(0, Math.min(1, (S.lookAmt ?? 100) / 100));
+    this.lookFilter = this.look.filter(la);
+    const tint = S.look === "custom" ? [...hexRgb(S.lookColor), 0.34] : this.look.tint;
+    this.lookTint = tint ? `rgba(${tint[0]}, ${tint[1]}, ${tint[2]}, ${f3(tint[3] * la)})` : null;
+    this.bright = Math.max(0, Math.min(1, (S.bright || 0) / 100));
+    this.pulseAmt = Math.max(0, Math.min(1.5, (S.pulseAmt ?? 100) / 100));
     this.title = ""; // intro/outro – set by the generator
     this.duration = 0;
     this.credits = () => "";
@@ -79,12 +93,24 @@ export class Compositor {
       c.height = h;
       return c;
     };
+    this.off = off;
     this.prev = off(this.W, this.H); // for echo
     this.red = off(this.W, this.H); // for RGB split
     this.cyan = off(this.W, this.H);
     this.grain = makeGrain(off(256, 256));
     this.backs = []; // tiny canvases for the blurred border in "Fit" mode (one per field)
     this.lines = makeScanlines(off(4, 4));
+  }
+
+  // The canvas got another size (the window changed shape): the buffers for echo and RGB split follow
+  resize(W, H) {
+    this.c.width = this.W = W;
+    this.c.height = this.H = H;
+    for (const k of ["prev", "red", "cyan"]) {
+      this[k].width = W;
+      this[k].height = H;
+    }
+    this.eo = this.es = null; // (the edge buffers are made again)
   }
 
   // ---------- Triggers (from the generator) ----------
@@ -128,12 +154,15 @@ export class Compositor {
   // st: { t, slots, groups (media per group), cutT (per group), energy, beatT, beatAmt, stutterT }
 
   draw(st) {
-    const { g, W, H, fx } = this;
+    let { g } = this; // (let: a field with soft seams is drawn into its own buffer first)
+    const { W, H, fx } = this;
     const t = st.t;
     const e = st.energy;
     g.save();
     g.fillStyle = "#000";
     g.fillRect(0, 0, W, H);
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = this.S.smooth === false ? "low" : "high"; // clips scaled smoothly, less pixelated
 
     let dx = 0;
     let dy = 0;
@@ -143,62 +172,160 @@ export class Compositor {
       dy = (Math.random() - 0.5) * a;
     }
     const hue = fx.hue ? `hue-rotate(${Math.round((t * (30 + 110 * e)) % 360)}deg) saturate(1.3)` : "";
-    const pulse = fx.zoom ? (st.beatAmt || 0) * Math.exp(-(t - st.beatT) * 9) : 0;
+    // Zoom pulse: eases in just BEFORE the beat (the next beat is known) so the peak lands exactly on it, then fades out softly
+    let pulse = 0;
+    if (fx.zoom && this.pulseAmt > 0) {
+      const after = (st.beatAmt || 0) * Math.exp(-Math.max(0, t - st.beatT) * 5.5);
+      const d = st.nextT != null ? st.nextT - t : 9;
+      const x = d >= 0 && d < 0.11 ? 1 - d / 0.11 : 0;
+      const before = (st.nextAmt || 0) * x * x * (3 - 2 * x);
+      pulse = Math.max(after, before) * this.pulseAmt;
+    }
 
-    st.slots.forEach((s, i) => {
+    // Reveal opening: the clip sits in the middle as a small rounded window and slowly grows until the drop
+    const rv = st.reveal;
+    let slots = st.slots;
+    // (the window has the clip's own shape – a portrait clip stands upright –, the clip fills it, black all around,
+    // a soft glow that breathes with the beat)
+    const reveal = !!rv && slots.length === 1;
+    if (reveal) {
+      const m0 = st.groups[slots[0].g];
+      const k = 0.34 + 0.56 * ((1 - Math.cos(Math.PI * rv.p)) / 2);
+      const want = m0 && m0.w && m0.h ? Math.max(0.4, Math.min(2.4, m0.w / m0.h)) : W / H;
+      this.rvAsp = this.rvAsp == null ? want : this.rvAsp + (want - this.rvAsp) * 0.2; // follows a changing clip smoothly
+      let w = W * k;
+      let h = H * k;
+      if (w / h > this.rvAsp) w = h * this.rvAsp;
+      else h = w / this.rvAsp;
+      w = Math.round(w);
+      h = Math.round(h);
+      const win = { x: Math.round((W - w) / 2), y: Math.round((H - h) / 2), w, h, g: slots[0].g, fx: false, fy: false };
+      const rad = Math.min(w, h) * 0.07;
+      const beat = Math.exp(-(t - st.beatT) * 6);
+      g.save();
+      g.shadowColor = "rgba(255, 196, 224, .6)";
+      g.shadowBlur = Math.min(W, H) * (0.045 + 0.035 * beat);
+      g.fillStyle = "#000";
+      roundRect(g, win.x, win.y, win.w, win.h, rad);
+      g.fill();
+      g.restore();
+      g.save();
+      roundRect(g, win.x, win.y, win.w, win.h, rad);
+      g.clip();
+      slots = [win];
+      this.revealWin = win;
+      this.revealRad = rad;
+    } else {
+      this.revealWin = null;
+      this.rvAsp = null;
+    }
+    const fitM = reveal ? "cover" : this.S.fit;
+    // Soft seams: the fields of a split screen blend into each other (no sharp line between them)
+    const softOn = !!this.S.soft && !reveal && slots.length > 1;
+
+    const drawField = (s, i) => {
       const m = st.groups[s.g];
       if (!m || !m.w || !m.h) return;
       const since = t - (st.cutT[s.g] || 0);
+      // Scroll cut (like swiping a feed): the old clip slides out, the new one in from the other side
+      // "Fit" with a clip whose shape is only a little off the field's: fill the field (a few % cropped) instead of thin
+      // blurred bars at the sides – they stand out and the zoom pulse covers and uncovers them again
+      const fitFor = (c) => (fitM === "contain" && Math.max(s.w / s.h / (c.w / c.h), c.w / c.h / (s.w / s.h)) <= SNAP ? "cover" : fitM);
+      const fitHere = fitFor(m);
+      const lv = st.leave && st.leave[s.g];
+      const sp = lv ? (t - lv.t) / SCROLL : 1;
+      const scrolling = !!lv && sp >= 0 && sp < 1;
       let zoom = 1 + pulse;
       if (m.kind === "image" && fx.kenburns) zoom += 0.07 * Math.min(1, since / 4);
       let ox = dx;
       let oy = dy;
       let filter = hue;
-      if (this.look.filter) filter += " " + this.look.filter;
+      if (this.lookFilter) filter += " " + this.lookFilter;
+      if (this.bright) filter += ` brightness(${f3(1 + 0.1 * this.bright)})`;
       // Even out brightness: every clip towards a medium brightness
       if (this.S.lookEven && m.sig && m.sig.lum != null) filter += ` brightness(${Math.max(0.8, Math.min(1.4, 118 / Math.max(20, m.sig.lum))).toFixed(2)})`;
       // Transition: the new clip whips into the field with motion blur
-      if (fx.whip && since < 0.16) {
+      if (fx.whip && since < 0.16 && !scrolling) {
         const p = 1 - since / 0.16;
         const dir = (s.g + st.cutCount) % 2 ? 1 : -1;
         if (s.w >= s.h * 0.9) ox += dir * p * p * s.w * 0.6;
         else oy += dir * p * p * s.h * 0.6;
         filter += ` blur(${(p * 10).toFixed(1)}px)`;
       }
-      // Zoom-in entry: the new clip shoots into the field – alternating from big (in) and from small (out)
-      if (fx.zoomin && since < 0.3) {
+      // Zoom-in entry: the new clip shoots into the field – always from big (zooming out would show borders), alternating strong and soft
+      if (fx.zoomin && since < 0.3 && !scrolling) {
         const p = since / 0.3;
         const ease = 1 - Math.pow(1 - p, 3);
-        const from = (m.zoomDir || 1) > 0 ? 1.75 : 0.45;
+        const from = (m.zoomDir || 1) > 0 ? 1.75 : 1.35;
         zoom *= from + (1 - from) * ease;
-        if (from < 1 && p < 0.35) filter += ` brightness(${(1 + 0.6 * (1 - p / 0.35)).toFixed(2)})`; // short flare when zooming out
       }
-      if (this.S.fit === "contain") this.backdrop(i, m, s);
-      drawIn(g, m, s, this.S.fit, zoom, ox, oy, filter.trim(), fx.kenburns);
-    });
+      if (scrolling) {
+        // Like swiping a feed: the two clips are one strip – the old one moves out, the new one follows right behind it.
+        // Each is drawn with its own blurred backdrop, shifted along (else the new backdrop would cover the old clip).
+        const ease = 1 - Math.pow(1 - sp, 3);
+        const strip = (clip, off, zm) => {
+          g.save();
+          g.beginPath();
+          g.rect(s.x, s.y, s.w, s.h);
+          g.clip();
+          g.translate(0, off);
+          const ft = fitFor(clip);
+          if (ft === "contain") this.backdrop(i, clip, s);
+          drawIn(g, clip, s, ft, zm, ox, oy, filter.trim(), fx.kenburns);
+          g.restore();
+        };
+        if (lv.m && lv.m.w && lv.m.h) strip(lv.m, lv.dir * s.h * ease, 1);
+        strip(m, lv.dir * s.h * (ease - 1), zoom);
+        return;
+      }
+      if (fitHere === "contain") this.backdrop(i, m, s);
+      drawIn(g, m, s, fitHere, zoom, ox, oy, filter.trim(), fx.kenburns);
+    };
+    slots.forEach((s, i) => drawField(s, i));
+    if (softOn) this.softSeams(slots); // the sharp lines between the fields become soft
+    if (this.revealWin) {
+      g.restore(); // (the rounded window's clip)
+      g.save();
+      g.strokeStyle = "rgba(255, 255, 255, .2)";
+      g.lineWidth = 2;
+      roundRect(g, this.revealWin.x, this.revealWin.y, this.revealWin.w, this.revealWin.h, this.revealRad);
+      g.stroke();
+      g.restore();
+    }
 
     // Color look: tint over everything, noir with dark corners
-    if (this.look.tint) {
+    if (this.lookTint) {
       g.globalCompositeOperation = "soft-light";
-      g.fillStyle = this.look.tint;
+      g.fillStyle = this.lookTint;
+      g.fillRect(0, 0, W, H);
+      g.globalCompositeOperation = "source-over";
+    }
+    // Brighter, smoothly: white in soft-light lifts the mid-tones without burning out the highlights
+    if (this.bright) {
+      g.globalCompositeOperation = "soft-light";
+      g.fillStyle = `rgba(255, 255, 255, ${f3(0.4 * this.bright)})`;
       g.fillRect(0, 0, W, H);
       g.globalCompositeOperation = "source-over";
     }
     if (this.look.vignette) vignette(g, W, H, 0.6);
+    // Only the rim of the picture is softened / smeared / bent – the middle stays sharp
+    if (this.S.edge && this.S.edge !== "off") this.edgeSoft(this.S.edge, Math.max(0, Math.min(1, (this.S.edgeAmt ?? 50) / 100)));
 
-    // Dividers between fields, glowing to the beat
-    if (st.slots.length > 1) {
+    // Dividers between fields, glowing to the beat – thin (2 px at 720p, 3 px at 1080p); none with soft seams
+    if (st.slots.length > 1 && !softOn) {
+      const dw = Math.max(2, Math.round(W / 640));
+      const h2 = dw / 2;
       const glow = Math.exp(-(t - st.beatT) * 7);
       g.fillStyle = "#0a0309";
       st.slots.forEach((s) => {
-        if (s.x > 0) g.fillRect(s.x - 2, s.y, 4, s.h);
-        if (s.y > 0) g.fillRect(s.x, s.y - 2, s.w, 4);
+        if (s.x > 0) g.fillRect(s.x - h2, s.y, dw, s.h);
+        if (s.y > 0) g.fillRect(s.x, s.y - h2, s.w, dw);
       });
       if (fx.lines && glow > 0.05) {
         g.fillStyle = `rgba(255, 62, 138, ${0.9 * glow})`;
         st.slots.forEach((s) => {
-          if (s.x > 0) g.fillRect(s.x - 1, s.y, 2, s.h);
-          if (s.y > 0) g.fillRect(s.x, s.y - 1, s.w, 2);
+          if (s.x > 0) g.fillRect(s.x - h2, s.y, dw, s.h);
+          if (s.y > 0) g.fillRect(s.x, s.y - h2, s.w, dw);
         });
       }
     }
@@ -296,6 +423,138 @@ export class Compositor {
       const p = this.prev.getContext("2d");
       p.clearRect(0, 0, W, H);
       p.drawImage(this.c, 0, 0);
+    }
+  }
+
+  // Soft seams: the line between two fields is not sharp but smeared softly. Nothing overlaps – each clip stays in its own
+  // field –, a band across the seam is smeared (the picture shrunk across the seam and scaled back up, cheap) and
+  // blended back in: strongest right at the seam, nothing at the ends of the band.
+  softSeams(slots) {
+    const { W, H } = this;
+    const a = Math.max(0, Math.min(1, (this.S.softAmt == null ? 50 : this.S.softAmt) / 100));
+    const k = 0.025 + 0.075 * a;
+    const minW = Math.min(...slots.map((x) => x.w));
+    const minH = Math.min(...slots.map((x) => x.h));
+    const fH = Math.round(Math.min(k * W, 0.16 * minW)); // half the width of the band across a vertical seam
+    const fV = Math.round(Math.min(k * H, 0.16 * minH));
+    const done = new Set();
+    for (const s of slots) {
+      if (s.x > 1 && fH >= 2 && !done.has("v" + s.x + ":" + s.y)) {
+        done.add("v" + s.x + ":" + s.y);
+        this.smear({ x: s.x - fH, y: s.y, w: 2 * fH, h: s.h }, "x");
+      }
+      if (s.y > 1 && fV >= 2 && !done.has("h" + s.y + ":" + s.x)) {
+        done.add("h" + s.y + ":" + s.x);
+        this.smear({ x: s.x, y: s.y - fV, w: s.w, h: 2 * fV }, "y");
+      }
+    }
+  }
+  smear(r, axis) {
+    const { g } = this;
+    const along = axis === "x" ? r.w : r.h; // the length across the seam
+    const texel = Math.max(2, Math.round(along / 6));
+    const sw = axis === "x" ? Math.max(2, Math.ceil(r.w / texel)) : r.w;
+    const sh = axis === "y" ? Math.max(2, Math.ceil(r.h / texel)) : r.h;
+    const small = this.smallBuf || (this.smallBuf = document.createElement("canvas"));
+    const big = this.bigBuf || (this.bigBuf = document.createElement("canvas"));
+    small.width = sw;
+    small.height = sh;
+    big.width = r.w;
+    big.height = r.h;
+    const sx = small.getContext("2d");
+    const bx = big.getContext("2d");
+    sx.imageSmoothingEnabled = bx.imageSmoothingEnabled = true;
+    sx.imageSmoothingQuality = bx.imageSmoothingQuality = "high";
+    sx.clearRect(0, 0, sw, sh);
+    sx.drawImage(g.canvas, r.x, r.y, r.w, r.h, 0, 0, sw, sh); // shrunk across the seam
+    bx.globalCompositeOperation = "source-over";
+    bx.clearRect(0, 0, r.w, r.h);
+    bx.drawImage(small, 0, 0, sw, sh, 0, 0, r.w, r.h); // …and back: smeared
+    // the smear counts fully in the middle (the seam) and not at all at the ends of the band
+    const gr = axis === "x" ? bx.createLinearGradient(0, 0, r.w, 0) : bx.createLinearGradient(0, 0, 0, r.h);
+    for (let n = 0; n <= 8; n++) {
+      const p = n / 8;
+      const v = Math.sin(Math.PI * p); // 0 → 1 → 0
+      gr.addColorStop(p, `rgba(0,0,0,${(v * v).toFixed(3)})`);
+    }
+    bx.globalCompositeOperation = "destination-in";
+    bx.fillStyle = gr;
+    bx.fillRect(0, 0, r.w, r.h);
+    bx.globalCompositeOperation = "source-over";
+    g.drawImage(big, r.x, r.y);
+  }
+
+  // Rim effect on the finished picture: a blurred copy (cheap: the picture shrunk and scaled back up) that only shows
+  // towards the edges. blur = soft, motion = streaks sideways (left/right) and up/down (top/bottom), lens = bent outwards
+  edgeSoft(kind, a) {
+    if (a <= 0) return;
+    const { g, W, H } = this;
+    const f = 1 / (2 + 7 * a);
+    const sw = Math.max(8, Math.round(W * f));
+    const sh = Math.max(8, Math.round(H * f));
+    if (!this.es) this.es = this.off(sw, sh);
+    if (!this.eo) this.eo = this.off(W, H);
+    if (this.es.width !== sw || this.es.height !== sh) {
+      this.es.width = sw;
+      this.es.height = sh;
+    }
+    const sx = this.es.getContext("2d");
+    sx.imageSmoothingQuality = "high";
+    sx.drawImage(this.c, 0, 0, sw, sh);
+    const o = this.eo.getContext("2d");
+    const mask = (shape) => {
+      o.globalCompositeOperation = "destination-in";
+      const k = 0.5 + 0.5 * a; // how far in the effect reaches: stronger = more of the rim
+      let gr;
+      if (shape === "x") {
+        gr = o.createLinearGradient(0, 0, W, 0);
+        gr.addColorStop(0, "rgba(0,0,0,1)");
+        gr.addColorStop(Math.max(0.02, 0.5 - 0.5 * (1 - k) - 0.12), "rgba(0,0,0,0)");
+        gr.addColorStop(Math.min(0.98, 0.5 + 0.5 * (1 - k) + 0.12), "rgba(0,0,0,0)");
+        gr.addColorStop(1, "rgba(0,0,0,1)");
+      } else if (shape === "y") {
+        gr = o.createLinearGradient(0, 0, 0, H);
+        gr.addColorStop(0, "rgba(0,0,0,1)");
+        gr.addColorStop(Math.max(0.02, 0.5 - 0.5 * (1 - k) - 0.12), "rgba(0,0,0,0)");
+        gr.addColorStop(Math.min(0.98, 0.5 + 0.5 * (1 - k) + 0.12), "rgba(0,0,0,0)");
+        gr.addColorStop(1, "rgba(0,0,0,1)");
+      } else {
+        gr = o.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.hypot(W, H) * 0.5);
+        gr.addColorStop(0, "rgba(0,0,0,0)");
+        gr.addColorStop(0.35, "rgba(0,0,0,0)");
+        gr.addColorStop(1, `rgba(0,0,0,${f3(0.55 + 0.4 * a)})`);
+      }
+      o.fillStyle = gr;
+      o.fillRect(0, 0, W, H);
+      o.globalCompositeOperation = "source-over";
+    };
+    const pass = (draw, shape) => {
+      o.clearRect(0, 0, W, H);
+      draw();
+      mask(shape);
+      g.drawImage(this.eo, 0, 0);
+    };
+    o.imageSmoothingEnabled = true;
+    o.imageSmoothingQuality = "high";
+    if (kind === "motion") {
+      const n = 6;
+      const reach = W * 0.03 * (0.4 + a);
+      pass(() => {
+        o.globalAlpha = 1 / 3;
+        for (let i = 0; i < n; i++) o.drawImage(this.es, ((i / (n - 1)) - 0.5) * reach * 2, 0, W, H);
+        o.globalAlpha = 1;
+      }, "x");
+      const reachY = H * 0.03 * (0.4 + a);
+      pass(() => {
+        o.globalAlpha = 1 / 3;
+        for (let i = 0; i < n; i++) o.drawImage(this.es, 0, ((i / (n - 1)) - 0.5) * reachY * 2, W, H);
+        o.globalAlpha = 1;
+      }, "y");
+    } else if (kind === "lens") {
+      const z = 1 + 0.05 * a + 0.02;
+      pass(() => o.drawImage(this.es, (W - W * z) / 2, (H - H * z) / 2, W * z, H * z), "r");
+    } else {
+      pass(() => o.drawImage(this.es, 0, 0, W, H), "r");
     }
   }
 
@@ -437,8 +696,21 @@ export class Compositor {
 }
 
 // Draw media into a field (fill or fit), with mirroring, zoom and offset
+const SCROLL = 0.34; // seconds a scroll cut takes
+const SNAP = 1.16; // "Fit": a clip this close to the field's shape (ratio of the two aspect ratios) fills it
 const INTRO = 3.2; // seconds
 const OUTRO = 4.5;
+
+function roundRect(g, x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
 
 function vignette(g, W, H, a) {
   const v = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
