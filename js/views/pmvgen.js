@@ -69,6 +69,10 @@ const DEFAULTS = {
   softAmt: 50, // how wide the blend is (%)
   divW: 2, // width of the dividers between the fields (px at 1280 wide, scales with the picture)
   cutLead: 0, // cuts land this many ms before the beat (the picture is a touch early, which feels tighter)
+  minBeats: 0, // a clip stays at least this many beats before its field is cut again (0 = off)
+  maxBeats: 0, // … and is replaced after at most this many beats (0 = off)
+  reshuffleEach: false, // several songs / Plex: new clips for every new song
+  introEach: false, // several songs / Plex: intro and outro come again for every song
   edge: "off", // rim of the picture: off | blur | motion | lens
   edgeAmt: 50, // how strong / how far in (%)
   smooth: true, // clips scaled smoothly (less pixelated)
@@ -321,6 +325,7 @@ export function render(main) {
           ${sw("matchCut", "Match cuts", "At each cut, the clip that best matches the previous one in color, brightness and composition comes next")}
           ${sw("sequenced", "Follow the scenes' timeline", "A clip comes from the part of its scene that matches how far the song is: the start of the song uses the beginnings of the scenes, the end of the song their endings (a song of known length only)")}
           ${sw("variety", "Variety", "The same clip doesn't come up again shortly after")}
+          ${sw("reshuffleEach", "New clips for every song", "With several songs or Plex: when the next song starts, all clips are replaced by new ones (R does that any time)")}
         </div>
       </section>
 
@@ -346,6 +351,8 @@ export function render(main) {
             </div>
               <div class="kb-pmvg-opts">
               <label class="kb-pmvg-range" title="The cut happens a little before the beat, so the picture is already there when the beat hits (2 frames are about 33 ms)"><span>${icon("sliders")}Cut ahead of the beat</span><input type="range" min="0" max="80" step="5" data-r="cutLead" aria-label="Cut ahead of the beat"><output data-ro="cutLead" data-unit=" ms"></output></label>
+              <label class="kb-pmvg-range" title="A clip stays on screen for at least this many beats before its field changes – no more clips that come and go on the next beat (0 = off)"><span>${icon("sliders")}Shortest clip</span><input type="range" min="0" max="16" step="1" data-r="minBeats" aria-label="Shortest clip in beats"><output data-ro="minBeats" data-unit=" beats" data-zero="off"></output></label>
+              <label class="kb-pmvg-range" title="A clip is replaced after at most this many beats, even when the pace would keep it longer (0 = off)"><span>${icon("sliders")}Longest clip</span><input type="range" min="0" max="32" step="1" data-r="maxBeats" aria-label="Longest clip in beats"><output data-ro="maxBeats" data-unit=" beats" data-zero="off"></output></label>
               ${sw("bars", "Bars and phrases", "Finds the \"one\" of each bar and where a phrase begins: cuts land on the strong beats, split screens change at the start of a phrase")}
               </div>
             </div>
@@ -501,6 +508,7 @@ export function render(main) {
             <div class="kb-pmvg-opts">
               ${sw("intro", "Intro", "Title card at the start: your title slams in, comic-SFX style")}
               ${sw("outro", "Outro", "Credits at the end: the picture fades dark, title and number of clips")}
+              ${sw("introEach", "Again for every song", "With several songs or Plex: intro and outro come again for each song (the outro when a song plays to its end)")}
             </div>
             <input class="kb-field" data-title placeholder="Title for intro/outro – empty = song name" value="${esc(S.title)}">
             </div>
@@ -521,7 +529,7 @@ export function render(main) {
         <h2><span class="kb-pmvg-no">4</span>Go</h2>
         <ul class="kb-pmvg-sum" data-sum></ul>
         <button class="kb-btn is-primary kb-pmvg-start" data-start disabled>${icon("bolt")}Pick a song first</button>
-        <p class="kb-hint">Keys while it runs: Space pause · F fullscreen · H hide the bar · I clip info · Esc stop</p>
+        <p class="kb-hint">Keys while it runs: Space pause · R new clips · F fullscreen · H hide the bar · I clip info · Esc stop</p>
         <div class="kb-pmvg-presets">
           <span class="kb-lab-t">My settings</span>
           <div class="kb-pmvg-row">
@@ -580,7 +588,10 @@ export function render(main) {
       const lo = Number(r.min || 0);
       r.style.setProperty("--p", ((S[r.dataset.r] - lo) / (Number(r.max || 100) - lo)) * 100 + "%");
     });
-    main.querySelectorAll("[data-ro]").forEach((o) => (o.textContent = S[o.dataset.ro] + (o.dataset.unit ?? " %")));
+    main.querySelectorAll("[data-ro]").forEach((o) => {
+      const v = S[o.dataset.ro];
+      o.textContent = !+v && o.dataset.zero != null ? o.dataset.zero : v + (o.dataset.unit ?? " %");
+    });
     // Without clip audio, clip volume and "when" have no effect
     ["[data-clipvol]", "[data-seg=voiceMode]", "[data-voicewhen]"].forEach((q) => $(q).classList.toggle("is-dim", !S.fx.voice));
     $("[data-voicehint]").textContent = !S.fx.voice
@@ -1519,6 +1530,9 @@ class Generator {
     this.tpl = tpl || null;
     this.ti = 0;
     this.log = []; // sequence (cuts, layouts) – readable on the stage element for tests
+    this.curK = 0; // the beat being handled (onBeat)
+    this.cutK = []; // field → the beat its clip was put on screen (shortest / longest clip)
+    this.songShown0 = 0; // clips shown before this song (the outro counts per song)
     this.dir = S.split;
     [this.W, this.H] = this.sizeFor();
     this.prepShape = { landscape: 0, portrait: 0 }; // clips being prepared per shape (clip shape per layout)
@@ -1557,7 +1571,7 @@ class Generator {
     this.comp = new Compositor(this.canvas, S);
     this.comp.title = String(S.title || "").trim() || this.song.name;
     this.comp.duration = this.music ? 0 : this.song.duration;
-    this.comp.credits = () => `${this.shown.size} Clips · ${Math.round(this.song.bpm)} BPM`;
+    this.comp.credits = () => `${this.shown.size - this.songShown0} Clips · ${Math.round(this.song.bpm)} BPM`;
     this.start().catch((e) => this.fail(e));
   }
   mount() {
@@ -1585,6 +1599,7 @@ class Generator {
               ? `<span class="kb-pmvg-sync" title="If the cuts come too early or too late: shift them ([ / ])"><button class="kb-btn is-ghost" data-act="sync-">−</button><span data-h="sync"></span><button class="kb-btn is-ghost" data-act="sync+">+</button><button class="kb-btn is-ghost" data-act="tap" title="Tap along to the beat you hear (T) – the sync sets itself">Tap</button></span>`
               : `<button class="kb-btn is-icon is-ghost" data-act="pause" title="Pause (Space)">${icon("pause")}</button>`
           }
+          <button class="kb-btn is-icon is-ghost" data-act="reshuffle" title="New clips – the music keeps playing (R)">${icon("shuffle")}</button>
           <button class="kb-btn is-icon is-ghost" data-act="info" title="Which clips are on screen (I)">${icon("info")}</button>
           <button class="kb-btn is-icon is-ghost" data-act="hidebar" title="Hide this bar (H) – H brings it back">${icon("close")}</button>
           <button class="kb-btn is-icon is-ghost" data-act="full" title="Fullscreen (F)">${icon("expand")}</button>
@@ -1621,6 +1636,7 @@ class Generator {
       if (a === "sync-" || a === "sync+") this.nudge(a === "sync+" ? 0.05 : -0.05);
       if (a === "tap") this.tap();
       if (a === "voicemode") this.cycleVoiceMode();
+      if (a === "reshuffle") this.reshuffle();
       if (a === "full") this.fullscreen();
       if (a === "info") this.toggleInfo();
       if (a === "hidebar") this.toggleBar();
@@ -1634,6 +1650,7 @@ class Generator {
       else if ((e.key === "t" || e.key === "T") && this.ext && !e.repeat) this.tap();
       else if ((e.key === "[" || e.key === "]") && this.ext) this.nudge(e.key === "]" ? 0.05 : -0.05);
       else if (e.key === "f" || e.key === "F") this.fullscreen();
+      else if ((e.key === "r" || e.key === "R") && !e.repeat && !e.ctrlKey && !e.metaKey && !this.done) this.reshuffle();
       else if (e.key === "i" || e.key === "I") this.toggleInfo();
       else if (e.key === "h" || e.key === "H") this.toggleBar();
       else return;
@@ -2073,6 +2090,7 @@ class Generator {
     if (!m) return false; // nothing ready yet → the field keeps running
     this.groups[gi] = m;
     this.cutT[gi] = t;
+    this.cutK[gi] = this.curK;
     if (opt && opt.scroll && old && old !== m) {
       // the old clip scrolls out: it keeps playing a moment longer
       const prev = this.leave[gi];
@@ -2104,8 +2122,10 @@ class Generator {
       const prev = old[gi % Math.max(1, old.length)] || null;
       this.groups[gi] = this.takeMedia(aspectOfGroup(this.slots, gi), prev, !!prev) || prev;
       this.cutT[gi] = t;
+      this.cutK[gi] = this.curK;
     }
     this.cutT.length = n;
+    this.cutK.length = n;
     this.nextGroup = 0;
     this.dropUnused(old);
     this.cuts++;
@@ -2352,6 +2372,47 @@ class Generator {
   }
 
   // Another song in the running show (call rebase() once its position is set)
+  // New clips without stopping the music: the supply starts over with a fresh random order, and as soon as the first
+  // clips are ready every field changes at once (the beats, the layout and the effects go on as they were)
+  async reshuffle(auto) {
+    if (this.done || this.reshuffling || this.revealing || !this.layout) return;
+    this.reshuffling = true;
+    if (!auto) this.say("New clips …");
+    try {
+      this.ready.forEach((m) => this.release(m));
+      this.ready = [];
+      this.sources = [];
+      this.srcIdx = 0;
+      this.bad = 0;
+      this.fillPool();
+      const need = Math.min(3, LAYOUTS[this.layout] ? LAYOUTS[this.layout].groups : 1);
+      const t0 = performance.now();
+      while (!this.done && this.ready.length < need && performance.now() - t0 < 15000) await sleep(100);
+      if (this.done) return;
+      if (this.ready.length) {
+        const t = this.now();
+        this.setLayout(this.layout, t);
+        this.comp.flash(t, 0.3, "#fff");
+      }
+    } finally {
+      this.reshuffling = false;
+      if (!this.done && !auto) this.say(this.paused ? "Paused – Space continues" : "");
+    }
+  }
+
+  // The next song of the running show has started (rebase() is done; t0 = the show time of the change)
+  songChanged(t0) {
+    const S = this.S;
+    if (S.introEach) {
+      // intro and outro count from this song's start; the outro needs the song's length
+      this.comp.songStart = t0;
+      this.comp.duration = this.song.live ? 0 : Math.max(0, (this.song.duration || 0) - Math.max(0, this.pos()));
+      this.comp.title = String(S.title || "").trim() || this.song.name;
+      this.songShown0 = this.shown.size;
+    }
+    if (S.reshuffleEach) this.reshuffle(true);
+  }
+
   setSong(song) {
     this.song = song;
     this.setBars();
@@ -2387,6 +2448,7 @@ class Generator {
         this.setSong(next);
         this.playSource(0);
         this.rebase(t0);
+        this.songChanged(t0);
         this.say(this.paused ? "Paused – Space continues" : "");
         this.paintTrack();
         if (!this.paused) this.comp.text(this.now());
@@ -2415,6 +2477,7 @@ class Generator {
       this.ext = at(u.pos);
       this.setHeld(!u.playing);
       this.rebase(t0);
+      this.songChanged(t0);
       this.sayPlex(u.playing ? "" : "Paused on Plex");
       return;
     }
@@ -2565,6 +2628,9 @@ class Generator {
   // Direction: decide what happens on each beat
   onBeat(k, t) {
     const S = this.S;
+    this.curK = k;
+    const minB = Math.max(0, Math.round(+S.minBeats || 0));
+    const maxB = Math.max(0, Math.round(+S.maxBeats || 0));
     const beats = this.song.beats;
     const e = this.song.energy[k] || 0;
     const prev = this.song.energy[k - 4] || 0;
@@ -2602,14 +2668,14 @@ class Generator {
     let nextLayout = null;
     if (this.tpl) {
       // Cuts and layouts come from the template (applyEvent)
-    } else if (this.layouts.length > 1 && (drop || due) && !this.revealing && (nextLayout = this.pickLayout(e, drop))) {
+    } else if (this.layouts.length > 1 && ((drop && k - this.layoutBeat >= minB) || due) && !this.revealing && (nextLayout = this.pickLayout(e, drop))) {
       this.setLayout(nextLayout, t);
       this.layoutBeat = k;
       this.centerK = k;
       // Scrolling sides: in a 3-way layout (not on a drop, not in the loudest parts) the middle clip stays and the sides scroll
       this.scrollDir = S.scroll && !drop && e <= 0.9 && (this.layout === "tri" || this.layout === "trim") && Math.random() < 0.75 ? (Math.random() < 0.5 ? -1 : 1) : 0;
       this.sideN = 0;
-      this.layoutHold = drop ? 4 : 8; // after a drop, move on after just one bar
+      this.layoutHold = Math.max(drop ? 4 : 8, minB); // after a drop, move on after just one bar (or the shortest clip, if that is longer)
       this.lastCut = k;
       comp.flash(t, drop ? 0.9 : 0.35, drop ? "#ff3e8a" : "#fff");
     } else {
@@ -2635,11 +2701,33 @@ class Generator {
         }
       } else if (onGrid || (every === 4 && bar && k - this.lastCut >= 2)) {
         const n = LAYOUTS[this.layout].groups;
-        const gi = this.nextGroup % n;
-        if (this.cutGroup(gi, t)) {
+        let gi = this.nextGroup % n;
+        // Shortest clip: the next field whose clip has been on long enough (none yet → wait for a later beat)
+        if (minB) {
+          gi = -1;
+          for (let j = 0; j < n; j++) {
+            const c = (this.nextGroup + j) % n;
+            if (k - (this.cutK[c] ?? -99) >= minB) {
+              gi = c;
+              break;
+            }
+          }
+        }
+        if (gi >= 0 && this.cutGroup(gi, t)) {
           this.nextGroup = gi + 1;
           this.lastCut = k;
           if (e > 0.5) comp.flash(t, 0.15 + 0.3 * e, bar ? "#ff3e8a" : "#fff");
+        }
+      }
+    }
+
+    // Longest clip: a field whose clip has been on for that long is cut now, whatever the pace says
+    if (maxB && !this.revealing && !this.tpl && this.slots.length) {
+      const n = LAYOUTS[this.layout].groups;
+      for (let gi = 0; gi < n; gi++) {
+        if (this.cutK[gi] != null && k - this.cutK[gi] >= maxB && this.cutGroup(gi, t)) {
+          this.lastCut = k;
+          break;
         }
       }
     }

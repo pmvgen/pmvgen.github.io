@@ -86,6 +86,7 @@ export class Compositor {
     this.pulseAmt = Math.max(0, Math.min(1.5, (S.pulseAmt ?? 100) / 100));
     this.title = ""; // intro/outro – set by the generator
     this.duration = 0;
+    this.songStart = 0; // show time at which the current song began (intro / outro per song)
     this.credits = () => "";
     const off = (w, h) => {
       const c = document.createElement("canvas");
@@ -420,8 +421,10 @@ export class Compositor {
     g.restore();
 
     // Intro and outro lie on top of everything
-    if (this.S.intro && t < INTRO) this.drawIntro(t);
-    if (this.S.outro && this.duration > 12 && t > this.duration - OUTRO) this.drawOutro(t - (this.duration - OUTRO));
+    // (with "Again for every song" they count from the start of the song that plays)
+    const rt = t - (this.songStart || 0);
+    if (this.S.intro && rt >= 0 && rt < INTRO) this.drawIntro(rt);
+    if (this.S.outro && this.duration > 12 && rt > this.duration - OUTRO) this.drawOutro(rt - (this.duration - OUTRO));
 
     if (fx.echo) {
       const p = this.prev.getContext("2d");
