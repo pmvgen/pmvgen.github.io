@@ -1657,6 +1657,12 @@ class Generator {
       e.preventDefault();
     };
     document.addEventListener("keydown", this.onKey);
+    let resizeT = 0;
+    this.onResize = () => {
+      clearTimeout(resizeT);
+      resizeT = setTimeout(() => this.followWindow(), 350);
+    };
+    window.addEventListener("resize", this.onResize);
     el.addEventListener("input", (e) => {
       const r = e.target.closest("[data-vol]");
       if (r) this.setVolume(r.dataset.vol, Number(r.value));
@@ -2082,6 +2088,30 @@ class Generator {
 
   dropUnused(old) {
     old.forEach((m) => m && !this.groups.includes(m) && this.release(m));
+  }
+
+  // The size of the picture: 16:9 or 9:16 – or the shape of the window ("Match window")
+  sizeFor() {
+    const S = this.S;
+    const long = S.quality === 1080 ? 1920 : 1280;
+    const short = S.quality === 1080 ? 1080 : 720;
+    if (S.format === "window") {
+      const ar = Math.min(2.6, Math.max(0.4, window.innerWidth / Math.max(1, window.innerHeight)));
+      const even = (n) => Math.max(2, Math.round(n / 2) * 2);
+      return ar >= 1 ? [long, even(long / ar)] : [even(long * ar), long];
+    }
+    return S.format === "9:16" ? [short, long] : [long, short];
+  }
+
+  // The window changed shape: the picture follows (only "Match window", and not while recording – a video can't change its size)
+  followWindow() {
+    if (this.closed || this.done || this.S.format !== "window" || this.S.record || !this.layout) return;
+    const [W, H] = this.sizeFor();
+    if (Math.abs(W / H - this.W / this.H) < 0.03) return;
+    [this.W, this.H] = [W, H];
+    this.comp.resize(W, H);
+    this.setLayout(this.layout, this.now(), this.dir); // the fields are worked out again for the new shape
+    this.log.push({ t: this.now(), type: "resize", w: W, h: H });
   }
 
   cutGroup(gi, t, opt) {
@@ -3009,6 +3039,7 @@ class Generator {
     if (this.ac && this.ac.state !== "closed") this.ac.close().catch(() => {});
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     document.removeEventListener("keydown", this.onKey);
+    window.removeEventListener("resize", this.onResize);
     document.body.classList.remove("kb-noscroll");
     if (this.blobUrl) setTimeout(() => URL.revokeObjectURL(this.blobUrl), 60000);
     this.el.remove();
