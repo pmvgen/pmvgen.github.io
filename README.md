@@ -1,86 +1,141 @@
-# PMV Generator – web version (2.38.10)
+# PMV Generator – native (Rust)
 
-Pick a song and a folder of clips – on every beat it cuts to the next one: split-screen layouts like real PMVs, effects on cuts, beats and drops, beat-synced speed ramps and clip audio. It runs live in the browser and can record the result as a video. It can also analyze an existing PMV and rebuild it with your own clips.
+A native desktop companion to [pmvgen.github.io](https://github.com/pmvgen/pmvgen.github.io) (a rewrite of web
+version 2.38.10) – local only, for people who want to work on their own computer.
+Pick a song and a folder of clips – on every beat it cuts to the next one: split-screen layouts, effects on cuts,
+beats and drops, speed ramps, clip audio, a live fullscreen show – and, beyond the web version, a studio to preview
+and edit a generated PMV, project files that render the same video again, and fast hardware-encoded exports.
 
-**Open it:** https://pmvgen.github.io
+Everything runs locally. Nothing is uploaded.
 
-This is the standalone web version of the PMV Generator from [stash-pmv-plugins](https://github.com/anonym88312/stash-pmv-plugins) – it doesn't need Stash or any server.
+## Run it
 
-## Privacy
+**Linux:** `sudo apt install ffmpeg`, then run `pmvgen`.
+**Windows:** put `ffmpeg.exe` and `ffprobe.exe` next to `pmvgen.exe` (or in an `ffmpeg` folder beside it), or
+install ffmpeg (`winget install Gyan.FFmpeg`).
 
-Everything happens in your browser. Songs and clips are opened straight from your disk and are **never uploaded** – the page is plain static HTML and JavaScript without any backend, tracking or analytics. Your settings are remembered in your browser's local storage. Only if you use **Plex** does the page talk to plex.tv (to sign in) and to your own Plex server – straight from your browser, nothing passes through anyone else; the Plex key stays in your browser, and **Sign out** removes it.
+Open files directly: `pmvgen song.mp3 ~/Videos/clips` – or a project: `pmvgen my.pmvproj`. You can also drop
+songs, clip folders and projects onto the window.
 
-## Terms of use & disclaimer
+## The window
 
-This tool is meant for making music edits from **your own media**. The site asks you to accept these terms before it opens:
+It is laid out like the web version: **1 Music · 2 Clips · 3 Style · 4 Go**, with the same options, labels and
+hints, the same colours and the *Liquid glass* look (switch at the top right). Beside it, a **theme**: the
+original, your **system's** (GTK theme on Linux, accent and light / dark on Windows 11), Fluent, Adwaita,
+Catppuccin (4), Dracula, Nord, Sweet, Tokyo Night, Gruvbox, Rosé Pine, One Dark, Solarized, Everforest, Kanagawa,
+Monokai, GitHub and more. The window scales itself to its size and to the screen; **Ctrl +** / **Ctrl −** zoom
+further, **Ctrl 0** resets.
 
-- You are **18 or older** (or of legal age where you live).
-- You only use videos, images and music that **you own or have permission to use**.
-- You **never** use content showing **anyone under 18**.
-- You **never** use footage of real people **without their consent** – in particular, no sexual content of anyone who hasn't agreed to it.
-- You follow the law where you live, including copyright and privacy law.
+1. **Music** – *Your song*: songs (MP3, M4A, WAV, OGG, FLAC, … or a video's music), tempo and beats found at once,
+   **½ / 2× tempo**, **Earlier / Later** (20 ms), **Only use … Cut**. Several songs play one after another.
+   *PMV as template*: an existing PMV is analysed – music, every cut, the layouts and the flashes are taken over;
+   only the content comes from your clips. Two ways: **Follow the beat** (the web version's: cuts on the music's
+   beats, the PMV's music) and **Exact cuts** – every frame of the PMV is looked at and every cut is placed exactly
+   where its maker put it, whatever the beat; the music is the PMV's own or **the same song as a file** (where it
+   plays in the PMV is found by itself, to a fraction of a frame), and **where the music starts** can be set as a
+   time or a frame.
+2. **Clips** – folders (subfolders included) or single files; videos, images or both; portrait / landscape; which
+   folders. Clip selection: best moments, **clip speed follows the music**, **motion on the beat**, **clean cuts**
+   (every frame around a clip is checked for a cut to another scene – see *Shot detection* below),
+   smart crop, skip the start / end of each video – and **per video** its own skip of the start / end. Clip order:
+   match cuts, follow the scenes' timeline, variety.
+3. **Style** – moods and the sections Cutting, Effects, Pictures, Color & look, Picture & frame (**any format from
+   1:1 to 32:9, or portrait 4:5 to 9:16**), Sound (**clip audio** with its own volume – only on drops or always),
+   Funscript and Output (title cards with **your own font**, export quality **144p to 4K**, frame rate, **H.264 /
+   H.265 / AV1 / Web (VP9)**, the encoder – **NVIDIA, Intel, AMD, VA-API, Media Foundation or the processor** – and
+   the preset **Fastest / Balanced / Smallest file**).
+4. **Go** – **Start the show** (live, fullscreen; clips are chosen as it plays) or **Generate, preview & edit**.
 
-Everything runs locally in your browser – the author never receives, sees, stores or controls any media or anything made with this tool. **Users are solely responsible for what they create and share.** The author does not condone any misuse and accepts no liability for it. The software is provided “as is”, without warranty of any kind, under the [MIT license](LICENSE).
+### The live show
 
-## Using it
+Space pause · F fullscreen · H hide the bar · I clip info · **M change the moment** · N / P next / previous song ·
+Esc stop. *Change the moment* pauses and gives every clip on screen a slider to take it from another moment of its
+video; **Pin this moment** makes clips of that video often start there (kept between runs).
 
-1. **Music**: drop or choose a song (MP3, M4A, WAV, OGG, FLAC) – or a video, then its music is used. Tempo and beats are detected in the browser. If the tempo is off, **½ tempo** / **2× tempo** help, and **Earlier** / **Later** shift the cuts by 20 ms. **Only use … Cut** takes just a part of the song (e.g. without the intro); **Whole song again** undoes it. **Long DJ mixes** (an hour and more) work too: they're read piece by piece (with progress) and streamed while playing. **Several songs**: drop or choose several files (or a folder) – they play one after another, optionally shuffled. Or take the music from **Plex**, or use **PMV as template** (both below).
-2. **Clips**: drop one or more folders onto the card, or click it to choose a folder (subfolders are included). Single files work too. Supported: MP4, WebM, MOV, MKV (whatever your browser can play) and JPG, PNG, WebP, GIF, AVIF.
-   - **What**: videos, images or both · **Clip shape**: all, portrait only, landscape only.
-   - **Folders**: limit the clips to some of the added folders.
-   - **Clip selection**: best moments instead of random spots, **clean cuts** (a clip starts where its scene runs on for the next few seconds – no hidden scene change inside the clip), smart crop, match cuts, variety.
-     Also: **Skip the start / the end of each video** (no clips from logos and credits), **Clip speed follows the music** (fast, busy music gets clips with fast motion – experimental) and **Motion on the beat** (a clip's rhythm is measured and lined up with the beat – experimental).
-3. **Style**: mood presets (*PMV classic*, *Maximal*, *Hypno*, *Clean*) and five sections – cutting and layouts (fullscreen, kaleidoscope, 2-way, 3-way mirrored, 3-way, 4-way), effects on cuts / beats / drops, look & picture (color look, 16:9 or 9:16, **Fit** shows the whole clip with a blurred border, **Fill** crops it to fill the frame), song and clip volume, intro/outro and recording quality (720p/1080p). All sections are open; click a section's header to collapse it, or use **Collapse all**. **Bars and phrases** (under Cutting) finds the “one” of each bar and where a 4-bar phrase starts: cuts sit on the bar's strong beats and split screens change at the start of a phrase.
-4. **Go**: runs as a fullscreen show (Space pause, F fullscreen, Esc stop; with several songs N / P or the buttons in the bar skip). The bar and the mouse pointer disappear after 2.5 s without movement; **H** hides the bar for good (H again brings it back). **I** shows which clips are on screen (file, size, playing / loading / black picture) and which had to be skipped and why – clips the browser can't decode are left out instead of showing a black field. 4K clips run smoothly: the picture analysis runs in the background and every clip frame reaches the screen, also on 144/240 Hz monitors. With **Record** you get a WebM video to download – the duration is written into the file right in the browser, so players show the length and can seek.
+### The studio (Generate, preview & edit)
 
-   **My settings** saves everything about clips, cutting, effects, look and sound under a name and loads it again (kept in this browser); **Export** / **Import** move it as a file – also between the web version and the Stash plugin.
+Every clip of the PMV is chosen first; then you see it before anything is rendered:
 
-   **Funscript** (optional): builds a script for The Handy from the song and plays it with the PMV – enter your connection key under Funscript (kept in this browser only).
+- **Preview** with sound (song + clip audio), play / pause, jump anywhere.
+- **Timeline**: the layouts, every shot in its field with a thumbnail, drops. Click to select (Ctrl+click adds,
+  Shift+click a range, drag a box, Ctrl+A all), Ctrl+wheel zooms, the wheel scrolls.
+- **Swap** the selected shots' clips: **Auto** (like the generator: best moments, match cuts, the music's pace),
+  **Random**, or **by hand** (a clip and its moment) – taken from the library, one folder, or the clips the PMV
+  already uses. **Change the moment** of the selected clips. **Undo / redo** (Ctrl+Z / Ctrl+Y).
+- **Save project**: a `.pmvproj` file with every cut, effect and clip. Opening it again renders **exactly the same
+  video** – the same frames and the same sound – as long as the song and the clips are the same files.
+- **Export video**, with progress; nothing is left behind when it is cancelled or fails.
 
-   **Soften the seams** (Look): in a split screen the line between the clips is soft instead of sharp.
+The look (colour, edges, seams, fit, film effects), sound, title cards, font and output settings can still be changed
+after generating; the cuts, layouts and triggered effects stay as generated.
 
-   **Pictures**: still images from your library flash between the clips (**Image flash**: one or a burst, up to eight per beat, in a tempo of their own) or lie see-through over them (**Image overlay**) – add image files or a folder with images to the library.
+## Shot detection
 
-   **Change the moment** (key **M** or the pencil in the bar): the show pauses and every clip gets a slider to take it from another moment of its video; **Pin this moment** makes clips of that video often start there (kept in this browser).
+*Clean cuts* and *Exact cuts* need to tell a cut to another scene from motion, camera moves, flashes and effects.
+Every frame is looked at by two detectors that cover each other's blind spots:
 
-   **Mouse control**: run the show with the mouse – click the middle to pause, the sides for song volume or the previous / next song, the wheel and the middle button too (all off by default); **Start by itself** starts right after you pick a song.
+- **Classical measures** on a small picture: how much of it can't be found again nearby after compensating for
+  motion and brightness, colour change, edge change – and a light-independent **structure comparison** that tells
+  a lighting or colour effect from a new picture. A picture that comes back within 0.2 s was a flash or a glitch.
+- **TransNetV2** (Souček & Lokoč, MIT licence), a neural network made for shot boundaries, run in pure Rust
+  ([tract](https://github.com/sonos/tract)) from `models/transnetv2.onnx`
+  ([ONNX export](https://huggingface.co/elya5/transnetv2) of the [original weights](https://github.com/soCzech/TransNetV2)).
 
-The clips you add are kept only while the page is open – after a reload, add the folder again (your folder choice and all settings are remembered).
+`pmvgen --shots VIDEO` lists what it finds.
 
-Tip: three full-size portrait clips side by side = format **16:9** + layout 3-way + “Portrait only”.
-
-## Look and language
-
-- **Liquid glass**: the switch at the top right turns the see-through glass look on or off (on by default).
-- **Languages**: English, and Simplified Chinese when your browser is set to Chinese.
-
-## Music from Plex
-
-Switch step 1 to **Plex** and **Sign in with Plex** – you confirm on plex.tv like with any Plex app (no password passes through this page). Then:
-
-- **Follow what's playing**: a live visualizer for whatever you play in Plex – Plexamp, your phone, the Plex web app, a TV. The sound stays in your Plex player; the show follows song changes, pause and seeking. Your speakers may be late (Bluetooth, TV): press **T** (or **Tap**) along to the beat you hear and the offset sets itself; **− / +** or **[ / ]** shift it by hand. It's remembered per Plex player. Nothing is recorded in this mode.
-- **A playlist** or **Shuffle all**: songs from your Plex library, played here.
-
-This page is served over https, so your browser only lets it reach a Plex server that offers **secure connections** – with Plex's default settings and Remote Access that's the case. If your server can't be reached, the Stash plugin version (on `http://localhost`) reaches it in your local network directly.
-
-## PMV as template
-
-Switch step 1 to **PMV as template**, then pick one of your added videos (names containing “PMV” come first) or choose a video file. The analysis runs in the browser at about three times real-time speed and takes over the music, every cut, the layouts (split screens) and flashes. **Rebuild with my clips** plays the original music with the same cuts, layouts and flashes – only with your clips.
-
-## Requirements
-
-A current Chrome, Edge or Firefox on a desktop computer. Choosing whole folders isn't supported by every mobile browser – pick single files there.
-
-## Run it yourself
-
-It's a static site – any web server works, for example:
+## Command line
 
 ```
-python -m http.server 8000
+pmvgen --export --song song.mp3 --clips DIR [--clips DIR …] --out FILE [--template PMV] [--settings my.pmvgen.json]
+       [--from SEC] [--to SEC] [--seed N] [--save-project p.pmvproj] [OUTPUT OPTIONS]
+pmvgen --generate --song song.mp3 --clips DIR --save-project p.pmvproj
+pmvgen --render p.pmvproj --out FILE [--part 0:30-1:10] [OUTPUT OPTIONS]
+pmvgen --export --template PMV --exact [--song song.flac] [--music-start 0:05.300] --clips DIR --out FILE
+                                   # exact cuts: every cut where the PMV has it; the song file is lined up by itself
+pmvgen --analyze song.mp3          # tempo and beats as JSON
+pmvgen --encoders                  # which encoders work on this computer
+pmvgen --shots VIDEO               # where a video cuts to another scene
+pmvgen --align PMV --clips SONG    # where a song file plays in a PMV's soundtrack
+
+OUTPUT OPTIONS: --codec h264|h265|av1|web  --encoder auto|cpu|nvenc|qsv|amf|vaapi|mf  --preset fast|balanced|small
+                --quality 144…2160  --fps 24|25|30|50|60  --crf 12–40  --format 16:9|9:16|1:1|21:9|32:9|…  --font FILE
 ```
 
-then open http://localhost:8000. (Opening `index.html` directly from disk doesn't work, because browsers block JavaScript modules on `file://`.)
+Every graphics card encoder is test-run once before it is used (ffmpeg lists encoders even when their hardware is
+missing); if it still refuses a size or format when the export starts, the processor takes over by itself.
 
-## License
+## What is the same as the web version
 
-MIT – see [LICENSE](LICENSE).
+The parts that decide what happens were ported line by line and **checked against the original JavaScript** (the
+original modules run in Node; `tests/diff`): tempo, every beat, energy, bars and phrases, ½× / 2× tempo, funscripts,
+layouts and the picture analysis. The direction (when to cut, which layout, effects, speed ramps), clip selection,
+the template analysis (pmvscan), clip speed / motion on the beat and the drawing (pmvfx) follow the original's logic.
+
+## What is different
+
+- **Recording → Export / studio.** The web version records the live show in real time (WebM). Here a PMV is rendered
+  frame by frame to a video file – every frame is there, however slow the computer – and can be previewed and edited
+  first.
+- The template's beat snapping does what the web version's comment says (its code never moves an event).
+- Clip audio keeps its pitch through speed ramps (time-stretched), like the browser does.
+- **Not in this version:** Plex, mouse control, live control of The Handy (a `.funscript` is saved with the video),
+  the Chinese translation, *New clips for every song* (every song gets new clips here).
+
+## Building
+
+```
+cargo build --release                 # Linux: needs libgtk-3-dev, libasound2-dev
+cargo test --release                  # unit tests + an end-to-end test with generated media (needs ffmpeg)
+cargo clippy --release --all-targets -- -D warnings
+python3 tools_weaken_glibc.py target/release/pmvgen   # optional: lets the binary start on glibc < 2.39
+```
+
+Windows (cross-compiled from Linux): `sudo apt install mingw-w64`, `rustup target add x86_64-pc-windows-gnu`,
+`cargo build --release --target x86_64-pc-windows-gnu`.
+
+Settings live in `~/.config/pmvgen/settings.json` (Windows: `%APPDATA%\pmvgen\settings.json`).
+
+## Licenses
+
+MIT (like the original – see `assets/ORIGINAL-LICENSE.txt`). Font: Anton (SIL Open Font License,
+`assets/Anton-OFL.txt`). Shot detection model: TransNetV2 (MIT).
